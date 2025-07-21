@@ -18,6 +18,11 @@ const createPlan = async ({ name, price, duration_days }) => {
   return result;
 };
 
+const getPlanByName = async (name) => {
+  const [rows] = await db.query(`SELECT * FROM plans WHERE name = ?`, [name]);
+  return rows[0];
+};
+
 const updatePlan = async (id, data) => {
   const { name, price, duration_days } = data;
   const [result] = await db.query(
@@ -35,6 +40,7 @@ const deletePlan = async (id) => {
 module.exports = {
   getAllPlans,
   getPlanById,
+  getPlanByName,
   createPlan,
   updatePlan,
   deletePlan,

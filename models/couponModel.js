@@ -8,6 +8,11 @@ const getCouponByCode = async (code) => {
   return rows[0];
 };
 
+const getAllCoupons = async () => {
+  const [rows] = await db.query(`SELECT * FROM coupons`);
+  return rows;
+};
+
 const getCouponById = async (id) => {
   const [rows] = await db.query(`SELECT * FROM coupons WHERE id = ?`, [id]);
   return rows[0];
@@ -44,11 +49,35 @@ const deleteCoupon = async (id) => {
   const [result] = await db.query(`UPDATE coupons SET is_active = false WHERE id = ?`, [id]);
   return result;
 };
+const validateCouponCode = async (code, plan_id) => {
+  const [rows] = await db.query(
+    `
+    SELECT * FROM coupons
+    WHERE code = ?
+      AND is_active = true
+      AND valid_till >= CURDATE()
+      AND (plan_id IS NULL OR plan_id = ?)
+      AND (times_used < max_uses)
+    `,
+    [code, plan_id]
+  );
+
+  if (rows.length === 0) return { valid: false };
+
+  const coupon = rows[0];
+
+  return {
+    valid: true,
+    ...coupon,
+  };
+};
 
 module.exports = {
   getCouponByCode,
   getCouponById,
+  getAllCoupons,
   createCoupon,
   updateCoupon,
   deleteCoupon,
+  validateCouponCode
 };
