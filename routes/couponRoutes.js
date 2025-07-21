@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+
 const {
   validateCoupon,
   getCoupon,
@@ -8,10 +9,15 @@ const {
   removeCoupon,
 } = require('../controllers/couponController');
 
-router.get('/:code', validateCoupon);          // Validate via code
-router.get('/id/:id', getCoupon);              // Get by DB ID
-router.post('/', postCoupon);
-router.put('/:id', putCoupon);
-router.delete('/:id', removeCoupon);
+const verifySuperAdminJWT = require('../middleware/verifySuperAdminJWT');
+
+// ✅ Public: For users validating coupons at checkout
+router.get('/:code', validateCoupon);
+
+// 🔒 Protected: Super Admin access only
+router.get('/id/:id', verifySuperAdminJWT, getCoupon);
+router.post('/', verifySuperAdminJWT, postCoupon);
+router.put('/:id', verifySuperAdminJWT, putCoupon);
+router.delete('/:id', verifySuperAdminJWT, removeCoupon);
 
 module.exports = router;

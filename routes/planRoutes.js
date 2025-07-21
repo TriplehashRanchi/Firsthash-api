@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+
 const {
   getPlans,
   getPlan,
@@ -8,10 +9,15 @@ const {
   removePlan,
 } = require('../controllers/planController');
 
-router.get('/', getPlans);
-router.get('/:id', getPlan);
-router.post('/', postPlan);
-router.put('/:id', putPlan);
-router.delete('/:id', removePlan);
+const verifySuperAdminJWT = require('../middleware/verifySuperAdminJWT');
+
+// ❌ Public Routes
+router.get('/', getPlans);        // Admins can access this on /subscribe
+router.get('/:id', getPlan);      // Optional: allow public if needed
+
+// ✅ Protected Routes
+router.post('/', verifySuperAdminJWT, postPlan);
+router.put('/:id', verifySuperAdminJWT, putPlan);
+router.delete('/:id', verifySuperAdminJWT, removePlan);
 
 module.exports = router;
