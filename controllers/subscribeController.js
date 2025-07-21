@@ -5,6 +5,8 @@ const { getAdminByUID } = require('../models/userModel');
 const { getCompanyByOwnerUid } = require('../models/companyModel');
 const { sendWhatsAppAccountActivated } = require('../utils/sendAiSensyMessage');
 const { logTransaction, updateTransactionStatus  } = require('../models/transactionModel');
+const { getPlanByName } = require('../models/planModel');
+const { validateCouponCode } = require('../models/couponModel');
 
 const planPricing = {
   monthly: 49900, // in paise (₹499)
@@ -15,27 +17,49 @@ const createOrder = async (req, res) => {
   try {
     const { firebase_uid, plan, coupon } = req.body;
 
-    if (!firebase_uid || !plan || !planPricing[plan]) {
-      return res.status(400).json({ error: 'Invalid request' });
+    if (!firebase_uid || !plan) {
+      return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const amount = planPricing[plan];
+    // 🧠 Fetch plan from DB
+    const planData = await getPlanByName(plan);
+    if (!planData || !planData.is_active) {
+      return res.status(400).json({ error: 'Invalid or inactive plan' });
+    }
 
+    let finalAmount = planData.price;
+    let couponUsed = null;
+
+    // 🧾 If coupon provided, validate and apply
+    if (coupon) {
+      const couponData = await validateCouponCode(coupon, planData.id);
+      if (!couponData.valid) {
+        return res.status(400).json({ error: 'Invalid or expired coupon' });
+      }
+
+      couponUsed = coupon;
+      if (couponData.discount_type === 'flat') {
+        finalAmount -= couponData.discount_value;
+      } else if (couponData.discount_type === 'percent') {
+        finalAmount -= Math.floor((finalAmount * couponData.discount_value) / 100);
+      }
+
+      finalAmount = Math.max(finalAmount, 0); // Prevent negative
+    }
+
+    // ✅ Create Razorpay Order
     const order = await razorpay.orders.create({
-      amount,
+      amount: finalAmount,
       currency: 'INR',
       receipt: `order_${Date.now()}`,
       payment_capture: 1,
     });
 
-    console.log('Created Order:', order); // ✅ Add this
-
-    // after order creation
     await logTransaction({
       txn_id: order.id,
       admin_id: firebase_uid,
-      amount,
-      description: `Subscription Plan: ${plan}`,
+      amount: finalAmount,
+      description: `Plan: ${plan}${couponUsed ? ` | Coupon: ${couponUsed}` : ''}`,
       status: 'pending',
     });
 
@@ -45,7 +69,7 @@ const createOrder = async (req, res) => {
       razorpay_key_id: process.env.RAZORPAY_KEY_ID,
     });
   } catch (err) {
-    console.error('❌ Razorpay order creation failed:', err); // ✅ Add this
+    console.error('❌ Razorpay order creation failed:', err);
     res.status(500).json({ error: 'Failed to create order' });
   }
 };

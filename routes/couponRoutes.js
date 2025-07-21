@@ -7,12 +7,14 @@ const {
   postCoupon,
   putCoupon,
   removeCoupon,
+  getAllCoupons,
 } = require('../controllers/couponController');
 
 const verifySuperAdminJWT = require('../middleware/verifySuperAdminJWT');
 
 // ✅ Public: For users validating coupons at checkout
 router.get('/:code', validateCoupon);
+router.get('/', verifySuperAdminJWT, getAllCoupons);
 
 // 🔒 Protected: Super Admin access only
 router.get('/id/:id', verifySuperAdminJWT, getCoupon);
