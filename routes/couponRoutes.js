@@ -1,25 +1,23 @@
+// routes/couponRoutes.js
 const express = require('express');
 const router = express.Router();
-
 const {
+  getAllCoupons,
   validateCoupon,
   getCoupon,
   postCoupon,
   putCoupon,
   removeCoupon,
-  getAllCoupons,
 } = require('../controllers/couponController');
-
 const verifySuperAdminJWT = require('../middleware/verifySuperAdminJWT');
 
-// ✅ Public: For users validating coupons at checkout
-router.get('/:code', validateCoupon);
-router.get('/', verifySuperAdminJWT, getAllCoupons);
+router
+  .get('/', verifySuperAdminJWT, getAllCoupons)   // list
+  .get('/:code', validateCoupon)                  // public validate
+  .get('/id/:id', verifySuperAdminJWT, getCoupon) // fetch one
+  .post('/', verifySuperAdminJWT, postCoupon)
+  .put('/:id', verifySuperAdminJWT, putCoupon)
+  .delete('/:id', verifySuperAdminJWT, removeCoupon);
 
-// 🔒 Protected: Super Admin access only
-router.get('/id/:id', verifySuperAdminJWT, getCoupon);
-router.post('/', verifySuperAdminJWT, postCoupon);
-router.put('/:id', verifySuperAdminJWT, putCoupon);
-router.delete('/:id', verifySuperAdminJWT, removeCoupon);
 
 module.exports = router;
