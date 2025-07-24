@@ -5,9 +5,12 @@ const admin = require('firebase-admin');
 // point at your JSON file
 const serviceAccount = require(path.resolve(__dirname, './firebaseAdmin.json'));
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  // databaseURL, storageBucket, etc., if you need them
-});
+// 🔒 Only init once
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    // databaseURL, storageBucket, etc., if you need them
+  });
+}
 
 module.exports = admin;

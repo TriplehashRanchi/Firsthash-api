@@ -8,30 +8,35 @@ const {
   updateMember,
   updateStatus,
   deleteMember,
+  getAllAttendance,
+  createOrUpdateAttendance,
   getAttendanceForMember,
   getPaymentDetails,
   upsertPaymentDetails,
-  deletePaymentDetails,
-  getAllAttendance,
-  createOrUpdateAttendance,
-
+  deletePaymentDetails
 } = require('../controllers/memberController');
-const { requireAdminWithActiveCompany, verifyToken } = require('../middleware/auth');
 
-router.post('/attendance', createOrUpdateAttendance); // Handles saving attendance
-router.get('/attendance', getAllAttendance);       // Handles getting all attendance for the dashboard
+const { verifyToken, requireAdminWithActiveCompany } = require('../middleware/auth');
 
+// Protect *all* member routes below:
+router.use(verifyToken, requireAdminWithActiveCompany);
 
-router.post('/', verifyToken, requireAdminWithActiveCompany,  createMember);
-router.get('/',                 getAllMembers);
-router.get('/:uid',             getMemberById);
-router.put('/:uid',             updateMember);
-router.patch('/:uid/status',    updateStatus);
-router.delete('/:uid',          deleteMember);
-router.get('/:uid/attendance',  getAttendanceForMember);
-router.get('/:uid/payment-details', getPaymentDetails);
-router.put('/:uid/payment-details', upsertPaymentDetails);
+// — Attendance dashboard —
+router.post('/attendance',           createOrUpdateAttendance);
+router.get('/attendance',            getAllAttendance);
+
+// — Member CRUD —
+router.post('/',                     createMember);
+router.get('/',                      getAllMembers);
+router.get('/:uid',                  getMemberById);
+router.put('/:uid',                  updateMember);
+router.patch('/:uid/status',         updateStatus);
+router.delete('/:uid',               deleteMember);
+
+// — Per-member attendance & payments —
+router.get('/:uid/attendance',       getAttendanceForMember);
+router.get('/:uid/payment-details',  getPaymentDetails);
+router.put('/:uid/payment-details',  upsertPaymentDetails);
 router.delete('/:uid/payment-details', deletePaymentDetails);
-
 
 module.exports = router;

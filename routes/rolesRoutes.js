@@ -1,6 +1,9 @@
 const express = require('express');
 const router  = express.Router();
+const { verifyToken, requireAdminWithActiveCompany } = require('../middleware/auth');
 const ctrl    = require('../controllers/roleController');
+
+router.use(verifyToken, requireAdminWithActiveCompany);
 
 // Definition routes (unchanged)
 router.get('/',        ctrl.listRoles);
