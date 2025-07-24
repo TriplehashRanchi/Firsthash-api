@@ -9,6 +9,9 @@ const {
   createRole,
   updateRole,
   deleteRole,
+  assignRoleToUser,
+  removeRoleFromUser,
+  getUserRoles
 } = require('../models/rolesModel');
 
 // A constant to define which IDs are predefined and protected
@@ -30,6 +33,7 @@ exports.listRoles = async (req, res) => {
 exports.getRole = async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(id);
     const role = await getRoleById(id);
     if (!role) return res.status(404).json({ error: 'Role not found' });
     res.json(role);
@@ -88,6 +92,54 @@ exports.deleteRole = async (req, res) => {
 
     await deleteRole(id);
     res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+exports.assignRoles = async (req, res) => {
+  try {
+    const { firebase_uid, role_ids } = req.body;
+    if (!firebase_uid || !Array.isArray(role_ids) || role_ids.length === 0) {
+      return res.status(400).json({ error: 'firebase_uid & non-empty role_ids[] required' });
+    }
+    for (const rid of role_ids) {
+      await assignRoleToUser(firebase_uid, rid);
+    }
+    res.json({ firebase_uid, assigned: role_ids });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// — new: un-assign a batch of roles from a user —
+exports.unassignRoles = async (req, res) => {
+  try {
+    const { firebase_uid, role_ids } = req.body;
+    if (!firebase_uid || !Array.isArray(role_ids) || role_ids.length === 0) {
+      return res.status(400).json({ error: 'firebase_uid & non-empty role_ids[] required' });
+    }
+    for (const rid of role_ids) {
+      await removeRoleFromUser(firebase_uid, rid);
+    }
+    res.json({ firebase_uid, removed: role_ids });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// — new: list all roles assigned to a user —
+exports.listUserRoles = async (req, res) => {
+  try {
+    const { firebase_uid } = req.params;
+    if (!firebase_uid) {
+      return res.status(400).json({ error: 'firebase_uid required' });
+    }
+    const roles = await getUserRoles(firebase_uid);
+    res.json(roles);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });

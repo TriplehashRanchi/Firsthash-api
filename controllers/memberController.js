@@ -1,5 +1,5 @@
 // File: backend/controllers/memberController.js
-const admin = require('../utils/admin');               // Firebase Admin SDK
+const admin = require("../utils/admin"); // Firebase Admin SDK
 const {
   createEmployee,
   assignRole,
@@ -10,92 +10,100 @@ const {
   fetchAttendanceForUid,
   removeRoleAssignments,
   fetchPaymentDetails,
-  upsertPaymentDetails
+  fetchAllAttendance,
+  upsertAttendance
+} = require("../models/memberModel");
+// File: backend/controllers/memberController.js
+const {
+  upsertPaymentDetails: modelUpsertPaymentDetails
 } = require('../models/memberModel');
-const { sendWhatsAppsAccountActivated } = require('../utils/sendAiSensyMessage');
 
-const GLOBAL_COMPANY_ID = '00000000-0000-0000-0000-000000000000';
+const {
+  sendWhatsAppsAccountActivated,
+} = require("../utils/sendAiSensyMessage");
+const { act } = require("react");
+
+const GLOBAL_COMPANY_ID = "00000000-0000-0000-0000-000000000000";
 
 // Create a new member
+// File: backend/controllers/memberController.js
 exports.createMember = async (req, res) => {
   try {
     const {
-      member_type,     // role_id from dropdown
+      member_type, // rename here
+      role_ids,
       full_name,
       mobile_no,
       email,
       password,
-      employee_type,   // 0 or 1
-      address = null,
-      salary = null
+      confirm_password,
+      company_id// match the front-end
     } = req.body;
 
-    // Basic validation
+    console.log("👤 New member signup:", req.body);
+
+    // — Validate only these fields —
     if (
       member_type == null ||
+      !Array.isArray(role_ids) ||
+      role_ids.length === 0 ||
       !full_name ||
       !mobile_no ||
       !email ||
       !password ||
-      (employee_type !== 0 && employee_type !== 1)
+      !confirm_password
     ) {
-      return res.status(400).json({ error: 'Missing or invalid required fields' });
+      return res.status(400).json({ error: "All signup fields are required." });
+    }
+    if (password !== confirm_password) {
+      return res.status(400).json({ error: "Passwords must match." });
     }
 
-    // 1️⃣ Create the Firebase Auth user
+    // 1️⃣ Create Firebase user
     const userRecord = await admin.auth().createUser({
       email,
       password,
       displayName: full_name,
-      phoneNumber: mobile_no.startsWith('+') ? mobile_no : `+91${mobile_no}`
+      phoneNumber: mobile_no.startsWith("+") ? mobile_no : `+91${mobile_no}`,
     });
 
-    // 2️⃣ Set custom claims for role-based access
+    // 2️⃣ Set your custom claims
     await admin.auth().setCustomUserClaims(userRecord.uid, {
       roleId: member_type,
-      companyId: GLOBAL_COMPANY_ID,
-      employeeType: employee_type
+      companyId: company_id,
     });
 
-    // 3️⃣ Persist in your own MySQL DB, include address and salary
+    console.log(company_id)
+
+    // 3️⃣ Persist core employee
     const employee = await createEmployee({
       firebase_uid: userRecord.uid,
+      employee_type: member_type,
       email,
       name: full_name,
       phone: mobile_no,
-      company_id: GLOBAL_COMPANY_ID,
-      employee_type,
-      status: 'active',
-      address,
-      salary: employee_type === 1 ? salary : null,
-      password
+      company_id: company_id,
     });
 
-    // 4️⃣ Assign business role
-    const assignment = await assignRole({
-      firebase_uid: userRecord.uid,
-      role_id: member_type
-    });
-
-    // 5️⃣ Send WhatsApp welcome message
-    try {
-      await sendWhatsAppsAccountActivated({
-        name: full_name,
-        company_name: GLOBAL_COMPANY_ID,
-        phone: mobile_no,
-      });
-    } catch (whErr) {
-      console.error('WhatsApp send error:', whErr);
+    // 4️⃣ Batch‐assign all specific roles
+    for (const rid of role_ids) {
+      await assignRole({ firebase_uid: userRecord.uid, role_id: rid });
     }
 
-    // 6️⃣ Response
-    res.status(201).json({ employee, assignment });
+    // 5️⃣ (Optional) send welcome WhatsApp
+    sendWhatsAppsAccountActivated({
+      name: full_name,
+      company_name: company_id,
+      phone: mobile_no,
+    }).catch(console.error);
+
+    return res.status(201).json({ employee });
   } catch (err) {
-    console.error('createMember error:', err.stack || err);
-    if (err.code === 'auth/email-already-exists' || err.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({ error: 'Email already in use' });
+    console.error("createMember error:", err);
+    if (err.code && err.code.startsWith("auth/")) {
+      return res.status(400).json({ error: err.message });
     }
-    res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: "Internal server error" });
   }
 };
 
@@ -105,8 +113,8 @@ exports.getAllMembers = async (req, res) => {
     const members = await fetchAllEmployees();
     res.json(members);
   } catch (err) {
-    console.error('getAllMembers error:', err.stack || err);
-    res.status(500).json({ error: 'Failed to load members' });
+    console.error("getAllMembers error:", err.stack || err);
+    res.status(500).json({ error: "Failed to load members" });
   }
 };
 
@@ -115,11 +123,11 @@ exports.getMemberById = async (req, res) => {
   try {
     const { uid } = req.params;
     const member = await fetchEmployeeByUid(uid);
-    if (!member) return res.status(404).json({ error: 'Member not found' });
+    if (!member) return res.status(404).json({ error: "Member not found" });
     res.json(member);
   } catch (err) {
-    console.error('getMemberById error:', err.stack || err);
-    res.status(500).json({ error: 'Failed to load member' });
+    console.error("getMemberById error:", err.stack || err);
+    res.status(500).json({ error: "Failed to load member" });
   }
 };
 
@@ -134,7 +142,7 @@ exports.updateMember = async (req, res) => {
       employee_type,
       role_id,
       address = null,
-      salary = null
+      salary = null,
     } = req.body;
 
     // 1️⃣ Update core employee columns
@@ -144,7 +152,7 @@ exports.updateMember = async (req, res) => {
       phone,
       employee_type,
       address,
-      salary: employee_type === 1 ? salary : null
+      salary: employee_type === 1 ? salary : null,
     });
 
     // 2️⃣ Update role assignment
@@ -155,8 +163,8 @@ exports.updateMember = async (req, res) => {
     const updated = await fetchEmployeeByUid(uid);
     return res.json(updated);
   } catch (err) {
-    console.error('updateMember error:', err.stack || err);
-    return res.status(500).json({ error: 'Failed to update member' });
+    console.error("updateMember error:", err.stack || err);
+    return res.status(500).json({ error: "Failed to update member" });
   }
 };
 
@@ -168,8 +176,8 @@ exports.updateStatus = async (req, res) => {
     const updated = await editEmployee(uid, { status });
     res.json(updated);
   } catch (err) {
-    console.error('updateStatus error:', err.stack || err);
-    res.status(500).json({ error: 'Failed to update status' });
+    console.error("updateStatus error:", err.stack || err);
+    res.status(500).json({ error: "Failed to update status" });
   }
 };
 
@@ -180,8 +188,8 @@ exports.deleteMember = async (req, res) => {
     await removeEmployee(uid);
     res.json({ success: true });
   } catch (err) {
-    console.error('deleteMember error:', err.stack || err);
-    res.status(500).json({ error: 'Failed to delete member' });
+    console.error("deleteMember error:", err.stack || err);
+    res.status(500).json({ error: "Failed to delete member" });
   }
 };
 
@@ -189,13 +197,40 @@ exports.deleteMember = async (req, res) => {
 exports.getAttendanceForMember = async (req, res) => {
   try {
     const { uid } = req.params;
+    // This now calls the FIXED model function
     const records = await fetchAttendanceForUid(uid);
     res.json(records);
   } catch (err) {
-    console.error('getAttendanceForMember error:', err.stack || err);
-    res.status(500).json({ error: 'Failed to load attendance' });
+    console.error("getAttendanceForMember error:", err.stack || err);
+    res.status(500).json({ error: "Failed to load attendance" });
   }
 };
+
+exports.createOrUpdateAttendance = async (req, res) => {
+    try {
+        const records = req.body;
+        if (!Array.isArray(records) || records.length === 0) {
+            return res.status(400).json({ error: 'Invalid payload. Expected an array of records.' });
+        }
+        await upsertAttendance(records);
+        res.status(200).json({ message: 'Attendance saved successfully.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// ADD THIS NEW CONTROLLER FUNCTION
+// Handles GET /api/members/attendance
+exports.getAllAttendance = async (req, res) => {
+    try {
+        const records = await fetchAllAttendance();
+        res.json(records);
+    } catch (err) {
+        console.error("getAllAttendance error:", err);
+        res.status(500).json({ error: "Failed to load attendance records." });
+    }
+};
+
 
 // Payment details
 exports.getPaymentDetails = async (req, res) => {
@@ -204,21 +239,46 @@ exports.getPaymentDetails = async (req, res) => {
     const details = await fetchPaymentDetails(uid);
     res.json(details);
   } catch (err) {
-    console.error('getPaymentDetails error:', err.stack || err);
-    res.status(500).json({ error: 'Failed to load payment details' });
+    console.error("getPaymentDetails error:", err.stack || err);
+    res.status(500).json({ error: "Failed to load payment details" });
   }
 };
 
+
+
+// PUT /api/members/:uid/payment-details
 exports.upsertPaymentDetails = async (req, res) => {
   try {
     const { uid } = req.params;
-    await upsertPaymentDetails(uid, req.body);
-    res.json({ success: true });
+    console.log('📝 payment payload:', req.body);
+
+    // Accept either camelCase or snake_case keys:
+    const bank_name      = req.body.bank_name      ?? req.body.bankName      ?? null;
+    const branch_name    = req.body.branch_name    ?? req.body.branchName    ?? null;
+    const ifsc_code      = req.body.ifsc_code      ?? req.body.ifscCode      ?? null;
+    const account_number = req.body.account_number ?? req.body.accountNumber ?? null;
+    const account_holder = req.body.account_holder ?? req.body.accountHolder ?? null;
+    const account_type   = req.body.account_type   ?? req.body.accountType   ?? null;
+    const upi_id         = req.body.upi_id         ?? req.body.upiId         ?? null;
+
+    // Now call the model; none of these will be undefined
+    await modelUpsertPaymentDetails(uid, {
+      bank_name,
+      branch_name,
+      ifsc_code,
+      account_number,
+      account_holder,
+      account_type,
+      upi_id
+    });
+
+    return res.json({ success: true });
   } catch (err) {
     console.error('upsertPaymentDetails error:', err.stack || err);
-    res.status(500).json({ error: 'Failed to save payment details' });
+    return res.status(500).json({ error: 'Failed to save payment details' });
   }
 };
+
 
 exports.deletePaymentDetails = async (req, res) => {
   try {
@@ -226,7 +286,7 @@ exports.deletePaymentDetails = async (req, res) => {
     await removePaymentDetails(uid);
     res.json({ success: true });
   } catch (err) {
-    console.error('deletePaymentDetails error:', err.stack || err);
-    res.status(500).json({ error: 'Failed to delete payment details' });
+    console.error("deletePaymentDetails error:", err.stack || err);
+    res.status(500).json({ error: "Failed to delete payment details" });
   }
 };
