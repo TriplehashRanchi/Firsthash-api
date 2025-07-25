@@ -1,15 +1,22 @@
 // backend/firebase/admin.js
-const path = require('path');
 const admin = require('firebase-admin');
+require('dotenv').config();
 
-// point at your JSON file
-const serviceAccount = require(path.resolve(__dirname, './firebaseAdmin.json'));
 
-// 🔒 Only init once
+// 🔒 Load env vars
+const {
+  FIREBASE_PROJECT_ID,
+  FIREBASE_CLIENT_EMAIL,
+  FIREBASE_PRIVATE_KEY,
+} = process.env;
+
 if (!admin.apps.length) {
   admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    // databaseURL, storageBucket, etc., if you need them
+    credential: admin.credential.cert({
+      projectId: FIREBASE_PROJECT_ID,
+      clientEmail: FIREBASE_CLIENT_EMAIL,
+      privateKey: FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    }),
   });
 }
 
