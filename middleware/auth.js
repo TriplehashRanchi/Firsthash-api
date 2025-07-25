@@ -1,13 +1,7 @@
-const admin = require('firebase-admin');
+const admin = require('../utils/admin');
 const { getAdminByUID, getEmployeeByUID } = require('../models/userModel');
 const { getCompanyByOwnerUid, getCompanyById } = require('../models/companyModel');
 
-// Initialize Firebase Admin SDK (only once)
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(require('../utils/firebaseAdmin.json')),
-  });
-}
 
 // ✅ 1. Verify Firebase Token
 const verifyToken = async (req, res, next) => {
