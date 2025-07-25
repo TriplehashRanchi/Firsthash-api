@@ -5,7 +5,7 @@ const { getCompanyByOwnerUid, getCompanyById } = require('../models/companyModel
 // Initialize Firebase Admin SDK (only once)
 if (!admin.apps.length) {
   admin.initializeApp({
-    credential: admin.credential.cert(require('../config/firebase-adminsdk.json')),
+    credential: admin.credential.cert(require('../utils/firebaseAdmin.json')),
   });
 }
 
