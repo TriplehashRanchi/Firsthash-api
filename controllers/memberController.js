@@ -21,7 +21,6 @@ const {
 const {
   sendWhatsAppsAccountActivated,
 } = require("../utils/sendAiSensyMessage");
-const { act } = require("react");
 
 const GLOBAL_COMPANY_ID = "00000000-0000-0000-0000-000000000000";
 
