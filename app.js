@@ -10,6 +10,11 @@ const superadminRoutes = require('./routes/superadminRoutes');
 const roleRoutes = require('./routes/rolesRoutes');
 const memberRoutes = require('./routes/memberRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
+const clientRoutes = require('./routes/clientRoutes');
+const eventRoutes = require('./routes/eventRoutes');
+const serviceRoutes = require('./routes/serviceRoutes');
+const deliverableRoutes = require('./routes/deliverableRoutes');
+
 
 const app = express();
 
@@ -26,6 +31,10 @@ app.use('/api/superadmin', superadminRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/members', memberRoutes);
 app.use('/api/attendance', attendanceRoutes);
+app.use('/api/clients', clientRoutes);
+app.use('/api/events', eventRoutes);
+app.use('/api/services', serviceRoutes);
+app.use('/api/deliverables', deliverableRoutes);
 
 
 
