@@ -14,6 +14,7 @@ const clientRoutes = require('./routes/clientRoutes');
 const eventRoutes = require('./routes/eventRoutes');
 const serviceRoutes = require('./routes/serviceRoutes');
 const deliverableRoutes = require('./routes/deliverableRoutes');
+const projectRoutes = require('./routes/projectRoutes');
 
 
 const app = express();
@@ -34,6 +35,7 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/services', serviceRoutes);
+app.use('/api/projects', projectRoutes);
 app.use('/api/deliverables', deliverableRoutes);
 
 
