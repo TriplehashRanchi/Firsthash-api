@@ -252,13 +252,18 @@ exports.getProjectDetailsById = async (projectUuid, companyId) => {
 
        const allEmployeesQuery = db.query('SELECT firebase_uid AS id, name FROM employees WHERE company_id = ?', [companyId]);
 
+        const quotationsQuery = db.query(
+        'SELECT * FROM quotations WHERE project_id = ? ORDER BY version DESC',
+        [projectUuid]
+    );
+
     // 2. Execute all queries at once.
     const [
         [projectResults], [shootRows], [deliverables], [taskAssignmentRows], 
-        [receivedPayments], [paymentSchedules], [expenses], [teamRoleRows], [allEmployees]
+        [receivedPayments], [paymentSchedules], [expenses], [teamRoleRows], [allEmployees], [quotations]
     ] = await Promise.all([
         projectQuery, shootsQuery, deliverablesQuery, tasksQuery,
-        receivedPaymentsQuery, paymentScheduleQuery, expensesQuery, teamRolesQuery, allEmployeesQuery
+        receivedPaymentsQuery, paymentScheduleQuery, expensesQuery, teamRolesQuery, allEmployeesQuery, quotationsQuery 
     ]);
 
     // 3. If no project, stop here.
@@ -334,6 +339,7 @@ exports.getProjectDetailsById = async (projectUuid, companyId) => {
     return {
         ...projectData,
         teamMembers,
+        quotations,
         clients: {
             clientDetails: {
                 name: projectData.clientName, phone: projectData.clientPhone,
