@@ -220,44 +220,45 @@ exports.getProjectDetailsById = async (projectUuid, companyId) => {
     const deliverablesQuery = db.query('SELECT * FROM deliverables WHERE project_id = ?', [projectUuid]);
 
     // Get all tasks (project-level and deliverable-level) and their assignees
-    const tasksQuery = db.query(`
+ const tasksQuery = db.query(`
         SELECT t.*, ta.employee_firebase_uid, e.name as employee_name
         FROM tasks t
         LEFT JOIN task_assignees ta ON t.id = ta.task_id
         LEFT JOIN employees e ON ta.employee_firebase_uid = e.firebase_uid
-        WHERE t.project_id = ? OR t.deliverable_id IN (SELECT id FROM deliverables WHERE project_id = ?)
-    `, [projectUuid, projectUuid]);
+        WHERE t.company_id = ? AND (t.project_id = ? OR t.deliverable_id IN (SELECT id FROM deliverables WHERE project_id = ?))
+    `, [companyId, projectUuid, projectUuid]);
     
     // Financials
     const receivedPaymentsQuery = db.query('SELECT * FROM received_payments WHERE project_id = ? ORDER BY date_received DESC', [projectUuid]);
     const paymentScheduleQuery = db.query('SELECT * FROM payment_schedules WHERE project_id = ? ORDER BY due_date ASC', [projectUuid]);
     const expensesQuery = db.query('SELECT * FROM expenses WHERE project_id = ? ORDER BY expense_date DESC', [projectUuid]);
     
-   const teamQuery = db.query(`
+      const teamRolesQuery = db.query(`
         SELECT
-            e.firebase_uid AS id,
-            e.name,
-            IFNULL(GROUP_CONCAT(er.type_name), '') AS roles,
-            (SELECT er_inner.type_name FROM employee_roles er_inner JOIN employee_role_assignments era_inner ON er_inner.id = era_inner.role_id WHERE era_inner.firebase_uid = e.firebase_uid LIMIT 1) AS primaryRole
+            e.firebase_uid,
+            e.name AS employee_name,
+            er.type_name AS role,
+            er.role_code
         FROM
             employees e
-        LEFT JOIN
+        INNER JOIN
             employee_role_assignments era ON e.firebase_uid = era.firebase_uid
-        LEFT JOIN
+        INNER JOIN
             employee_roles er ON era.role_id = er.id
         WHERE
             e.company_id = ?
-        GROUP BY
-            e.firebase_uid, e.name
+            AND (er.company_id = e.company_id OR er.company_id = '00000000-0000-0000-0000-000000000000');
     `, [companyId]);
+
+       const allEmployeesQuery = db.query('SELECT firebase_uid AS id, name FROM employees WHERE company_id = ?', [companyId]);
 
     // 2. Execute all queries at once.
     const [
         [projectResults], [shootRows], [deliverables], [taskAssignmentRows], 
-        [receivedPayments], [paymentSchedules], [expenses], [teamMembers]
+        [receivedPayments], [paymentSchedules], [expenses], [teamRoleRows], [allEmployees]
     ] = await Promise.all([
         projectQuery, shootsQuery, deliverablesQuery, tasksQuery,
-        receivedPaymentsQuery, paymentScheduleQuery, expensesQuery, teamQuery
+        receivedPaymentsQuery, paymentScheduleQuery, expensesQuery, teamRolesQuery, allEmployeesQuery
     ]);
 
     // 3. If no project, stop here.
@@ -311,6 +312,23 @@ exports.getProjectDetailsById = async (projectUuid, companyId) => {
             tasksById[row.id].assignments.push(row.employee_name);
         }
     }
+ // 4. Process all the data in JavaScript.
+    const teamMembersById = new Map(allEmployees.map(emp => [emp.id, { ...emp, primaryRole: null, roles: [] }]));
+
+    for (const row of teamRoleRows) {
+        const employee = teamMembersById.get(row.firebase_uid);
+        if (employee) {
+            if (!employee.primaryRole) {
+                employee.primaryRole = row.role;
+            }
+            employee.roles.push({
+                role: row.role,
+                code: row.role_code
+            });
+        }
+    }
+    const teamMembers = Array.from(teamMembersById.values());
+
 
     // 5. Assemble the final, complete object.
     return {

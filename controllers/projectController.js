@@ -8,6 +8,7 @@ const {
   getAllProjectsWithDetails,
   getProjectDetailsById,
 } = require('../models/projectModel');
+const {addPayment} = require('../models/paymentModel');
 
 exports.createFullProject = async (req, res) => {
   try {
@@ -22,7 +23,7 @@ exports.createFullProject = async (req, res) => {
       shoots,
       deliverables,
       receivedAmount,
-      paymentSchedule,
+      // paymentSchedule,
     } = req.body;
 
     // console.log('Deliverables:', deliverables);
@@ -50,7 +51,7 @@ exports.createFullProject = async (req, res) => {
     await insertShoots(project_id, shoots, company_id);
     await insertDeliverables(project_id, deliverables?.deliverableItems || []);
     await insertReceivedAmount(project_id, receivedAmount?.transaction);
-    await insertPaymentSchedule(project_id, paymentSchedule?.paymentInstallments || []);
+    // await insertPaymentSchedule(project_id, paymentSchedule?.paymentInstallments || []);
   
     
 
@@ -111,4 +112,26 @@ exports.getProjectById = async (req, res) => {
     console.error('❌ Failed to fetch project details:', err);
     res.status(500).json({ error: 'An error occurred while fetching project details.' });
   }
+};
+
+exports.addReceivedPayment = async (req, res) => {
+    try {
+        // The controller's job is to handle the request and validate data
+        const { projectId } = req.params;
+        const { amount, date, description } = req.body;
+
+        if (!amount || !date) {
+            return res.status(400).json({ error: 'Amount and date are required.' });
+        }
+        
+        // The controller passes the data to the model. It doesn't know how the database works.
+        const newPayment = await addPayment({ projectId, amount, date, description });
+        
+        // Send the successful response
+        res.status(201).json(newPayment);
+
+    } catch (err) {
+        console.error('❌ Failed to add payment:', err);
+        res.status(500).json({ error: 'Server error while adding payment.' });
+    }
 };

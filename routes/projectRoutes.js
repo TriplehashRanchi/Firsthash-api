@@ -6,5 +6,6 @@ const { verifyToken, requireAdminWithActiveCompany } = require('../middleware/au
 router.post('/', verifyToken, requireAdminWithActiveCompany, projectController.createFullProject);
 router.get('/', verifyToken, requireAdminWithActiveCompany, projectController.getProjectsList);
 router.get('/:id', verifyToken, requireAdminWithActiveCompany, projectController.getProjectById);
+router.post('/:projectId/payments', verifyToken, requireAdminWithActiveCompany, projectController.addReceivedPayment);
 
 module.exports = router;
