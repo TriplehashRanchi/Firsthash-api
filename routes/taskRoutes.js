@@ -1,7 +1,7 @@
 // File: routes/taskRoutes.js
 const express = require('express');
 const router = express.Router();
-const { createTask, updateTaskAssignees, updateTask } = require('../controllers/taskController');
+const { createTask, updateTaskAssignees, updateTask, deleteTask } = require('../controllers/taskController');
 const { verifyToken, requireAdminWithActiveCompany } = require('../middleware/auth');
 
 
@@ -12,6 +12,6 @@ const { verifyToken, requireAdminWithActiveCompany } = require('../middleware/au
 router.post('/', verifyToken, requireAdminWithActiveCompany, createTask);
 router.put('/:id', verifyToken, requireAdminWithActiveCompany, updateTask);
 router.put('/:id/assignees', verifyToken, requireAdminWithActiveCompany, updateTaskAssignees);
-router.delete('/:id', verifyToken, requireAdminWithActiveCompany, updateTask);
+router.delete('/:id', verifyToken, requireAdminWithActiveCompany, deleteTask);
 
 module.exports = router;

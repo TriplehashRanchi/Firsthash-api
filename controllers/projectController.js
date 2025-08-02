@@ -7,6 +7,7 @@ const {
   insertPaymentSchedule,
   getAllProjectsWithDetails,
   getProjectDetailsById,
+  updateStatusById,
 } = require('../models/projectModel');
 const {addPayment} = require('../models/paymentModel');
 
@@ -134,4 +135,31 @@ exports.addReceivedPayment = async (req, res) => {
         console.error('❌ Failed to add payment:', err);
         res.status(500).json({ error: 'Server error while adding payment.' });
     }
+};
+
+exports.updateProjectStatus = async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const { status: newStatus } = req.body;
+
+    // --- Input Validation ---
+    const allowedStatuses = ['ongoing', 'completed', 'rejected'];
+    if (!newStatus || !allowedStatuses.includes(newStatus)) {
+      return res.status(400).json({ error: 'Invalid or missing status provided. Must be one of: ongoing, completed, rejected.' });
+    }
+
+    // Call the model to perform the database update
+    const result = await updateStatusById(projectId, newStatus);
+
+    // Check if any row was actually updated
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Project not found or status is already set.' });
+    }
+
+    res.json({ success: true, message: `Project status successfully updated to ${newStatus}.` });
+
+  } catch (err) {
+    console.error('❌ Failed to update project status:', err);
+    res.status(500).json({ error: 'Server error while updating project status.' });
+  }
 };

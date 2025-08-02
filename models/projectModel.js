@@ -252,13 +252,18 @@ exports.getProjectDetailsById = async (projectUuid, companyId) => {
 
        const allEmployeesQuery = db.query('SELECT firebase_uid AS id, name FROM employees WHERE company_id = ?', [companyId]);
 
+        const quotationsQuery = db.query(
+        'SELECT * FROM quotations WHERE project_id = ? ORDER BY version DESC',
+        [projectUuid]
+    );
+
     // 2. Execute all queries at once.
     const [
         [projectResults], [shootRows], [deliverables], [taskAssignmentRows], 
-        [receivedPayments], [paymentSchedules], [expenses], [teamRoleRows], [allEmployees]
+        [receivedPayments], [paymentSchedules], [expenses], [teamRoleRows], [allEmployees], [quotations]
     ] = await Promise.all([
         projectQuery, shootsQuery, deliverablesQuery, tasksQuery,
-        receivedPaymentsQuery, paymentScheduleQuery, expensesQuery, teamRolesQuery, allEmployeesQuery
+        receivedPaymentsQuery, paymentScheduleQuery, expensesQuery, teamRolesQuery, allEmployeesQuery, quotationsQuery 
     ]);
 
     // 3. If no project, stop here.
@@ -334,6 +339,7 @@ exports.getProjectDetailsById = async (projectUuid, companyId) => {
     return {
         ...projectData,
         teamMembers,
+        quotations,
         clients: {
             clientDetails: {
                 name: projectData.clientName, phone: projectData.clientPhone,
@@ -348,3 +354,21 @@ exports.getProjectDetailsById = async (projectUuid, companyId) => {
         expenses: expenses.map(e => ({ id: e.id, productName: e.description, category: e.category, expense: parseFloat(e.amount), date: e.expense_date }))
     };
 };
+
+/**
+
+    Updates the status of a specific project.
+
+    @param {string} projectId - The UUID of the project to update.
+
+    @param {string} newStatus - The new status to set (e.g., 'ongoing', 'completed').
+
+    @returns {Promise<object>} The result object from the database driver.
+    */
+    exports.updateStatusById = async (projectId, newStatus) => {
+    const [result] = await db.query(`
+    UPDATE projects SET status = ? WHERE id = ?`,
+    [newStatus, projectId]
+    );
+    return result;
+    };
