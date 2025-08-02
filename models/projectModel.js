@@ -354,3 +354,21 @@ exports.getProjectDetailsById = async (projectUuid, companyId) => {
         expenses: expenses.map(e => ({ id: e.id, productName: e.description, category: e.category, expense: parseFloat(e.amount), date: e.expense_date }))
     };
 };
+
+/**
+
+    Updates the status of a specific project.
+
+    @param {string} projectId - The UUID of the project to update.
+
+    @param {string} newStatus - The new status to set (e.g., 'ongoing', 'completed').
+
+    @returns {Promise<object>} The result object from the database driver.
+    */
+    exports.updateStatusById = async (projectId, newStatus) => {
+    const [result] = await db.query(`
+    UPDATE projects SET status = ? WHERE id = ?`,
+    [newStatus, projectId]
+    );
+    return result;
+    };
