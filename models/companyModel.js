@@ -33,5 +33,37 @@ const getCompanyById = async (companyId) => {
 };
 // --- END: ADD THIS NEW FUNCTION ---
 
+/**
+ * NEW FUNCTION FOR UPDATING
+ * This function updates a company's record based on the owner's UID.
+ * The `updatedData` is an object where keys are column names and values are the new data.
+ * e.g., { name: 'New Company Name', city: 'New York' }
+ */
+const updateCompanyByOwnerUid = async (firebase_uid, updatedData) => {
+  // The db.query with `SET ?` safely builds the "col = val, col2 = val2" part of the query,
+  // preventing SQL injection and allowing you to update only the fields you provide.
+  const [result] = await db.query(
+    `UPDATE companies SET ? WHERE owner_admin_uid = ?`, 
+    [updatedData, firebase_uid]
+  );
+  return result;
+};
 
-module.exports = { createCompany, getCompanyByOwnerUid, getCompanyById };
+
+// You will also need a function for deleting later on.
+const deleteCompanyByOwnerUid = async (firebase_uid) => {
+    const [result] = await db.query(
+        `DELETE FROM companies WHERE owner_admin_uid = ?`,
+        [firebase_uid]
+    );
+    return result;
+};
+
+
+module.exports = {
+  createCompany,
+  getCompanyByOwnerUid,
+  getCompanyById,
+  updateCompanyByOwnerUid, // Export the new function
+  deleteCompanyByOwnerUid,
+};
