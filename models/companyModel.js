@@ -18,6 +18,21 @@ const getCompanyByOwnerUid = async (firebase_uid) => {
   return rows[0];
 };
 
+// --- START: ADD THIS NEW FUNCTION ---
+/**
+ * Fetches a single company's complete details by its UUID.
+ * @param {string} companyId - The UUID of the company.
+ * @returns {Promise<object|null>} The company object or null if not found.
+ */
+const getCompanyById = async (companyId) => {
+  const [[company]] = await db.query(
+    `SELECT * FROM companies WHERE id = ?`,
+    [companyId]
+  );
+  return company || null;
+};
+// --- END: ADD THIS NEW FUNCTION ---
+
 /**
  * NEW FUNCTION FOR UPDATING
  * This function updates a company's record based on the owner's UID.
@@ -48,6 +63,7 @@ const deleteCompanyByOwnerUid = async (firebase_uid) => {
 module.exports = {
   createCompany,
   getCompanyByOwnerUid,
+  getCompanyById,
   updateCompanyByOwnerUid, // Export the new function
   deleteCompanyByOwnerUid,
 };
