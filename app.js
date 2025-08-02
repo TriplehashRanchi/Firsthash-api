@@ -22,8 +22,8 @@ const projectRoutes = require('./routes/projectRoutes');
 const taskRoutes = require('./routes/taskRoutes');
 const shootRoutes = require('./routes/shootRoutes');
 const expenseRoutes = require('./routes/expenseRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 const quotationRoutes = require('./routes/quotationRoutes'); // <-- ADD THIS IMPORT
-
 
 
 const app = express();
@@ -62,6 +62,7 @@ app.use('/uploads', express.static(uploadsBasePath));
 // This line tells Express: "Any request to a URL starting with '/api/uploads'
 // should be handled by the logic inside the uploadRoutes file."
 app.use('/api/uploads', uploadRoutes);
+app.use('/api/admins', adminRoutes);
 
 
 

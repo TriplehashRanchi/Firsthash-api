@@ -1,56 +1,65 @@
 const {
- getCompanyByOwnerUid,
- updateCompanyByOwnerUid, // Import the new model function
- deleteCompanyByOwnerUid,
- // createCompany is also available if you need it
+    getCompanyByOwnerUid,
+    updateCompanyByOwnerUid,
+    deleteCompanyByOwnerUid,
 } = require("../models/companyModel");
 
+// This function can remain as is for public viewing.
 const getCompanyByUid = async (req, res) => {
-  try {
-    const { firebase_uid } = req.params;
-
-    if (!firebase_uid) {
-      return res.status(400).json({ error: 'Missing UID' });
+    try {
+        const { firebase_uid } = req.params;
+        const company = await getCompanyByOwnerUid(firebase_uid);
+        if (!company) return res.status(404).json({ error: 'Company not found' });
+        res.status(200).json(company);
+    } catch (err) {
+        res.status(500).json({ error: 'Internal server error' });
     }
-
-    const company = await getCompanyByOwnerUid(firebase_uid);
-
-    if (!company) {
-      return res.status(404).json({ error: 'Company not found' });
-    }
-
-    res.status(200).json(company);
-  } catch (err) {
-    console.error('Error fetching company:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
 };
 
-/**
- * NEW CONTROLLER FOR UPDATING
- * This handles the API request to update a company's profile.
- */
+// ** FIXED UPDATE FUNCTION **
 const updateCompany = async (req, res) => {
   try {
-    const { firebase_uid } = req.params;
-    const updatedData = req.body; // The new data comes from the request body
-
-    if (!firebase_uid) {
-        return res.status(400).json({ error: "Missing UID in URL" });
+    // 1. Check if your `verifyToken` middleware successfully attached the UID.
+    if (!req.firebase_uid) {
+        // This would mean verifyToken failed or was skipped.
+        return res.status(401).json({ error: "Authentication error: UID not attached to request." });
     }
-    if (!updatedData || Object.keys(updatedData).length === 0) {
+
+    // *** THE FIX IS HERE ***
+    // We now correctly get the UID from `req.firebase_uid`, which is what your middleware provides.
+    const authenticated_uid = req.firebase_uid; 
+    const incomingData = req.body;
+
+    if (!incomingData || Object.keys(incomingData).length === 0) {
         return res.status(400).json({ error: "Missing update data in request body" });
     }
 
-    // Call the model function to update the database
-    const result = await updateCompanyByOwnerUid(firebase_uid, updatedData);
+    // --- Data Sanitization (This is still a very important step) ---
+    const allowedFields = [
+        'name', 'logo', 'country', 'address_line_1', 'address_line_2',
+        'city', 'state', 'pincode', 'tax_id', 'upi_id', 'bank_name',
+        'bank_account_number', 'bank_ifsc_code', 'payment_qr_code_url',
+    ];
+
+    const sanitizedData = {};
+    for (const key of allowedFields) {
+      if (Object.prototype.hasOwnProperty.call(incomingData, key)) {
+        sanitizedData[key] = incomingData[key] === '' ? null : incomingData[key];
+      }
+    }
+    
+    if (Object.keys(sanitizedData).length === 0) {
+      return res.status(400).json({ error: "No valid fields provided for update." });
+    }
+    // --- End Sanitization ---
+
+    const result = await updateCompanyByOwnerUid(authenticated_uid, sanitizedData);
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ error: 'Company not found or no new data to update' });
+      return res.status(404).json({ error: 'Company not found, or data was unchanged.' });
     }
 
-    // After updating, fetch the complete, updated company profile and send it back
-    const company = await getCompanyByOwnerUid(firebase_uid);
+    const company = await getCompanyByOwnerUid(authenticated_uid);
     res.status(200).json(company);
 
   } catch (err) {
@@ -59,20 +68,31 @@ const updateCompany = async (req, res) => {
   }
 };
 
-
-// You should also have a delete controller
+// **FIXED DELETE FUNCTION**
 const deleteCompany = async (req, res) => {
     try {
-        const { firebase_uid } = req.params;
-        const result = await deleteCompanyByOwnerUid(firebase_uid);
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ error: 'Company not found' });
+        if (!req.firebase_uid) {
+            return res.status(401).json({ error: "Authentication error: UID not attached to request." });
         }
+        // *** THE FIX IS ALSO HERE ***
+        const authenticated_uid = req.firebase_uid;
+
+        const result = await deleteCompanyByOwnerUid(authenticated_uid);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Company not found to delete.' });
+        }
+        
         res.status(200).json({ message: 'Company deleted successfully' });
+
     } catch (err) {
         console.error('Error deleting company:', err);
         res.status(500).json({ error: 'Internal server error' });
     }
-};
+}
 
-module.exports = { getCompanyByUid, updateCompany, deleteCompany };
+module.exports = { 
+    getCompanyByUid, 
+    updateCompany,
+    deleteCompany
+};
