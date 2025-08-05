@@ -96,7 +96,7 @@ const sendPaidWhatsAppConfirmation = async ({ phone, name, fileUrl }) => {
       'https://backend.aisensy.com/campaign/t1/api/v2',
       {
         apiKey: process.env.AISENSY_API_KEY,
-        campaignName: 'firsthash_payment_paid',
+        campaignName: 'firsthash_bill_new',
         destination: formattedPhone,
         userName: name,
         source: 'FirstHash Payment',
