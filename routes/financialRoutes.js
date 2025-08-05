@@ -8,7 +8,7 @@ const { verifyToken, requireAdminWithActiveCompany } = require('../middleware/au
 router.post('/projects/:projectId/report', verifyToken, requireAdminWithActiveCompany, generateBill);
 
 // New route for generating a bill with a "Full Paid" watermark
-router.post('/projects/:projectId/full-paid-report', verifyToken, requireAdminWithActiveCompany, generateFullPaidBill);
+// router.post('/projects/:projectId/full-paid-report', verifyToken, requireAdminWithActiveCompany, generateFullPaidBill);
 
 router.put('/payments/:paymentId/mark-as-paid', verifyToken, requireAdminWithActiveCompany, markPaymentAsPaid);
 

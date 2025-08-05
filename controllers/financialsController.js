@@ -9,6 +9,7 @@ const db = require('../config/db');
 const projectModel = require('../models/projectModel');
 const companyModel = require('../models/companyModel');
 const financialsModel = require('../models/financialsModel');
+const { sendPaidWhatsAppConfirmation } = require('../utils/sendAiSensyMessage');
 
 exports.generateBill = async (req, res) => {
   try {
@@ -115,6 +116,12 @@ const templateData = {
       [fileUrl, id]
     );
 
+    await sendPaidWhatsAppConfirmation({
+      phone: projectData.clientPhone,
+      name: projectData.clientName,
+      fileUrl
+    });
+
     res.json({
       success: true,
       message: `Bill generated successfully.`,
@@ -130,109 +137,109 @@ const templateData = {
 
 
 // New function for generating a bill with a "Full Paid" watermark
-exports.generateFullPaidBill = async (req, res) => {
-  try {
-    const company_id = req.user.company_id;
-    const { projectId } = req.params;
-    const { amount, description, date_received } = req.body;
-    const paymentId = uuidv4();
+// exports.generateFullPaidBill = async (req, res) => {
+//   try {
+//     const company_id = req.user.company_id;
+//     const { projectId } = req.params;
+//     const { amount, description, date_received } = req.body;
+//     const paymentId = uuidv4();
     
-    const [projectData, companyData] = await Promise.all([
-      projectModel.getProjectDetailsById(projectId, company_id),
-      companyModel.getCompanyById(company_id),
-    ]);
+//     const [projectData, companyData] = await Promise.all([
+//       projectModel.getProjectDetailsById(projectId, company_id),
+//       companyModel.getCompanyById(company_id),
+//     ]);
 
-    if (!projectData || !companyData) {
-      return res.status(404).json({ error: 'Project or company not found.' });
-    }
+//     if (!projectData || !companyData) {
+//       return res.status(404).json({ error: 'Project or company not found.' });
+//     }
 
-    const [result] = await db.query(
-      `INSERT INTO received_payments (project_id, amount, description, created_at, type, file_url)
-       VALUES (?, ?, ?, NOW(), 'received', NULL)`,
-      [projectId, amount, description || '']
-    );
+//     const [result] = await db.query(
+//       `INSERT INTO received_payments (project_id, amount, description, created_at, type, file_url)
+//        VALUES (?, ?, ?, NOW(), 'received', NULL)`,
+//       [projectId, amount, description || '']
+//     );
 
-    const id = result.insertId;
+//     const id = result.insertId;
 
-    const formattedDate = new Date(date_received).toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
+//     const formattedDate = new Date(date_received).toLocaleDateString('en-GB', {
+//       day: '2-digit',
+//       month: 'short',
+//       year: 'numeric',
+//     });
 
-    const transactions = [{
-      amount,
-      date_received: formattedDate,
-      description,
-    }];
+//     const transactions = [{
+//       amount,
+//       date_received: formattedDate,
+//       description,
+//     }];
 
-    const templateData = {
-      project: projectData,
-      company: {
-        name: companyData.name,
-        logo: companyData.logo,
-        address: `${companyData.address_line_1 || ''}\n${companyData.address_line_2 || ''}\n${companyData.city || ''}, ${companyData.state || ''} - ${companyData.pincode || ''}`.trim(),
-        email: `Mail: ${req.user.email}`,
-        phone: `Tel: ${req.user.phone || 'N/A'}`,
-        bank_name: companyData.bank_name,
-        bank_account_number: companyData.bank_account_number,
-        bank_ifsc_code: companyData.bank_ifsc_code,
-        upi_id: companyData.upi_id,
-        payment_qr_code_url: companyData.payment_qr_code_url,
-      },
-      customer: {
-        name: projectData.clientName,
-        email: projectData.clientEmail,
-        phone: projectData.clientPhone,
-      },
-      date: new Date().toLocaleDateString('en-GB'),
-      amount,
-      description,
-      transactions,
-      paymentId,
-      isFullPaid: true // This will be used in the EJS template
-    };
+//     const templateData = {
+//       project: projectData,
+//       company: {
+//         name: companyData.name,
+//         logo: companyData.logo,
+//         address: `${companyData.address_line_1 || ''}\n${companyData.address_line_2 || ''}\n${companyData.city || ''}, ${companyData.state || ''} - ${companyData.pincode || ''}`.trim(),
+//         email: `Mail: ${req.user.email}`,
+//         phone: `Tel: ${req.user.phone || 'N/A'}`,
+//         bank_name: companyData.bank_name,
+//         bank_account_number: companyData.bank_account_number,
+//         bank_ifsc_code: companyData.bank_ifsc_code,
+//         upi_id: companyData.upi_id,
+//         payment_qr_code_url: companyData.payment_qr_code_url,
+//       },
+//       customer: {
+//         name: projectData.clientName,
+//         email: projectData.clientEmail,
+//         phone: projectData.clientPhone,
+//       },
+//       date: new Date().toLocaleDateString('en-GB'),
+//       amount,
+//       description,
+//       transactions,
+//       paymentId,
+//       isFullPaid: true // This will be used in the EJS template
+//     };
 
-    const templatePath = path.join(process.cwd(), 'templates', 'financials.ejs');
-    const html = await ejs.renderFile(templatePath, templateData);
+//     const templatePath = path.join(process.cwd(), 'templates', 'financials.ejs');
+//     const html = await ejs.renderFile(templatePath, templateData);
 
-    const uploadsDir = path.join(process.cwd(), 'uploads', 'financials');
-    fs.mkdirSync(uploadsDir, { recursive: true });
+//     const uploadsDir = path.join(process.cwd(), 'uploads', 'financials');
+//     fs.mkdirSync(uploadsDir, { recursive: true });
 
-    const fileName = `financials-fullpaid-${projectId}-${uuidv4()}.pdf`;
-    const filePath = path.join(uploadsDir, fileName);
+//     const fileName = `financials-fullpaid-${projectId}-${uuidv4()}.pdf`;
+//     const filePath = path.join(uploadsDir, fileName);
 
-    const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
+//     const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
+//     const page = await browser.newPage();
+//     await page.setContent(html, { waitUntil: 'networkidle0' });
 
-    await page.pdf({
-      path: filePath,
-      format: 'A4',
-      printBackground: true,
-      margin: { top: '0.2in', bottom: '0.2in', left: '0.3in', right: '0.3in' }
-    });
+//     await page.pdf({
+//       path: filePath,
+//       format: 'A4',
+//       printBackground: true,
+//       margin: { top: '0.2in', bottom: '0.2in', left: '0.3in', right: '0.3in' }
+//     });
 
-    await browser.close();
+//     await browser.close();
 
-    const fileUrl = `${req.protocol}://${req.get('host')}/uploads/financials/${fileName}`;
+//     const fileUrl = `${req.protocol}://${req.get('host')}/uploads/financials/${fileName}`;
 
-    await db.query(
-      `UPDATE received_payments SET file_url = ? WHERE id = ?`,
-      [fileUrl, id]
-    );
+//     await db.query(
+//       `UPDATE received_payments SET file_url = ? WHERE id = ?`,
+//       [fileUrl, id]
+//     );
 
-    res.json({
-      success: true,
-      message: `Full paid bill generated successfully.`,
-      url: fileUrl
-    });
+//     res.json({
+//       success: true,
+//       message: `Full paid bill generated successfully.`,
+//       url: fileUrl
+//     });
 
-  } catch (err) {
-    console.error('❌ Failed to generate full paid financial PDF:', err);
-    res.status(500).json({ error: 'Server error while generating bill.' });
-  }
-};
+//   } catch (err) {
+//     console.error('❌ Failed to generate full paid financial PDF:', err);
+//     res.status(500).json({ error: 'Server error while generating bill.' });
+//   }
+// };
 
 // controllers/financialsController.js
 
@@ -321,6 +328,11 @@ exports.markPaymentAsPaid = async (req, res) => {
       [newFileUrl, paidOnDate, paymentId]
     );
 
+    sendPaidWhatsAppConfirmation({
+      phone: projectData.clientPhone,
+      name: projectData.clientName,
+      fileUrl: newFileUrl
+    })
     // 6. Respond with the fully updated payment record
     const [finalRows] = await db.query(`SELECT * FROM received_payments WHERE id = ?`, [paymentId]);
     res.json({

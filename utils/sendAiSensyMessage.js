@@ -89,7 +89,34 @@ const sendWhatsAppsAccountActivated = async ({ name, company_name, phone }) => {
 };
 
 
+const sendPaidWhatsAppConfirmation = async ({ phone, name, fileUrl }) => {
+  try {
+    const formattedPhone = `91${phone.replace(/\D/g, '').slice(-10)}`;
+    const res = await axios.post(
+      'https://backend.aisensy.com/campaign/t1/api/v2',
+      {
+        apiKey: process.env.AISENSY_API_KEY,
+        campaignName: 'firsthash_payment_paid',
+        destination: formattedPhone,
+        userName: name,
+        source: 'FirstHash Payment',
+        templateParams: [name, fileUrl], // Assuming your AiSensy template has 2 placeholders
+        tags: ['payment_paid'],
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    console.log('✅ WhatsApp sent via AiSensy:', res.data);
+  } catch (err) {
+    console.error('❌ WhatsApp send failed:', err?.response?.data || err.message);
+  }
+};
 
 
 
-module.exports = { sendWhatsAppAccountActivated, sendWhatsAppsAccountActivated };
+
+
+module.exports = { sendWhatsAppAccountActivated, sendWhatsAppsAccountActivated, sendPaidWhatsAppConfirmation };
