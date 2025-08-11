@@ -27,6 +27,7 @@ const quotationRoutes = require('./routes/quotationRoutes'); // <-- ADD THIS IMP
 const financeRoutes = require('./routes/financialRoutes');
 
 
+
 const app = express();
 
 app.use(cors());
@@ -52,6 +53,7 @@ app.use('/api/shoots', shootRoutes);
 app.use('/api/projects/:projectId/expenses', expenseRoutes);
 app.use('/api/projects/:projectId/quotations', quotationRoutes);
 app.use('/api/finance', financeRoutes);
+
 
 const uploadsBasePath = process.env.NODE_ENV === 'production' 
     ? '/usr/src/app/uploads' 

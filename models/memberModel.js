@@ -93,20 +93,32 @@ async function fetchAllEmployees() {
        e.status,
        e.address,
        e.salary,
-       -- Group role IDs into a single JSON array
-       JSON_ARRAYAGG(r.role_id) as role_ids
+       -- If an employee has roles, aggregate them into a JSON array of objects.
+       -- Each object contains the role's ID and name.
+       JSON_ARRAYAGG(
+         CASE
+           WHEN r.role_id IS NOT NULL THEN JSON_OBJECT('role_id', r.role_id, 'role_name', er.type_name)
+           ELSE NULL
+         END
+       ) AS roles
      FROM employees e
      LEFT JOIN employee_role_assignments r ON e.firebase_uid = r.firebase_uid
+     LEFT JOIN employee_roles er ON r.role_id = er.id -- Join with roles table to get the name
      GROUP BY e.firebase_uid`
   );
 
-  // Process the result to handle users with no roles
+  // Post-process to clean up the 'roles' field.
+  // If an employee has no roles, JSON_ARRAYAGG returns [null]. This code changes it to an empty array [].
   return rows.map(row => ({
     ...row,
-    role_ids: row.role_ids[0] === null ? [] : row.role_ids,
+    roles: row.roles && row.roles[0] !== null ? row.roles : [],
   }));
 }
 
+/**
+ * UPDATED FUNCTION
+ * Fetches a single employee by their UID, including their assigned roles (ID and name).
+ */
 async function fetchEmployeeByUid(uid) {
   const [[row]] = await pool.execute(
     `SELECT
@@ -118,16 +130,28 @@ async function fetchEmployeeByUid(uid) {
        e.status,
        e.address,
        e.salary,
-       r.role_id
+       JSON_ARRAYAGG(
+         CASE
+           WHEN r.role_id IS NOT NULL THEN JSON_OBJECT('role_id', r.role_id, 'role_name', er.type_name)
+           ELSE NULL
+         END
+       ) AS roles
      FROM employees e
-     LEFT JOIN employee_role_assignments r
-       ON e.firebase_uid = r.firebase_uid
-     WHERE e.firebase_uid = ?`,
+     LEFT JOIN employee_role_assignments r ON e.firebase_uid = r.firebase_uid
+     LEFT JOIN employee_roles er ON r.role_id = er.id
+     WHERE e.firebase_uid = ?
+     GROUP BY e.firebase_uid`,
     [uid]
   );
-  return row;
-}
+  
+  if (!row) return null;
 
+  // Ensure the 'roles' field is a clean array.
+  return {
+      ...row,
+      roles: row.roles && row.roles[0] !== null ? row.roles : []
+  };
+}
 async function editEmployee(uid, updates) {
   const allowed = ['name', 'email', 'phone', 'employee_type', 'status', 'address', 'salary'];
   const fields = [];

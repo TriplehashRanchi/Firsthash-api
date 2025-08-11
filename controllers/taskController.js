@@ -2,6 +2,25 @@
 
 const taskModel = require('../models/taskModel');
 
+
+exports.getTasks = async (req, res) => {
+    try {
+        // The company ID is attached by your `requireAdminWithActiveCompany` middleware
+        const company_id = req.company.id;
+        
+        // We will assume a function exists in your model called 'getTasksByCompany'
+        // This function would fetch all tasks and could join with other tables
+        // to get details like assignee names, project titles, etc.
+        const tasks = await taskModel.getTasksByCompany(company_id);
+        
+        res.json(tasks);
+
+    } catch (err) {
+        console.error('❌ Failed to get tasks:', err);
+        res.status(500).json({ error: 'Server error while fetching tasks.' });
+    }
+};
+
 /**
  * @desc    Create a new task
  * @route   POST /api/tasks

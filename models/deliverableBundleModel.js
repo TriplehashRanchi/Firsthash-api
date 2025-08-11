@@ -101,3 +101,23 @@ exports.updateDeliverableBundle = async (bundle_id, company_id, items = []) => {
     [itemsJsonString, bundle_id, company_id]
   );
 };
+
+exports.getAllDeliverables = async (company_id) => {
+  // The SQL query to select deliverable details and the associated project name
+  const query = `
+    SELECT 
+      d.id, 
+      d.title, 
+      p.name AS project_name
+    FROM deliverables AS d
+    JOIN projects AS p ON d.project_id = p.id
+    WHERE p.company_id = ? 
+    ORDER BY p.created_at DESC, d.title ASC
+  `;
+  
+  // Execute the query with the company_id as a parameter to prevent SQL injection
+  const [deliverables] = await db.query(query, [company_id]);
+  
+  // Return the fetched rows
+  return deliverables;
+};
