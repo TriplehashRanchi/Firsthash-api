@@ -73,3 +73,20 @@ exports.deleteTask = async (taskId, company_id) => {
     const [result] = await db.query('DELETE FROM tasks WHERE id = ? AND company_id = ?', [taskId, company_id]);
     return result.affectedRows > 0;
 };
+
+exports.getTasksByCompany = async (companyId) => {
+  // This example query joins tasks with assignees to get who is assigned.
+  // You might also want to JOIN with projects or clients tables.
+  const query = `
+    SELECT 
+      t.*, 
+      GROUP_CONCAT(ta.employee_firebase_uid) AS assignee_ids
+    FROM tasks AS t
+    LEFT JOIN task_assignees AS ta ON t.id = ta.task_id
+    WHERE t.company_id = ?
+    GROUP BY t.id
+    ORDER BY t.created_at DESC
+  `;
+  const [tasks] = await db.query(query, [companyId]);
+  return tasks;
+};

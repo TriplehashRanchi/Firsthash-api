@@ -110,3 +110,14 @@ exports.updateBundle = async (req, res) => {
     res.status(500).json({ error: 'Failed to update bundle' });
   }
 };
+
+exports.getDeliverables = async (req, res) => {
+    try {
+        const company_id = req.company.id;
+        const deliverables = await deliverableBundles.getAllDeliverables(company_id);
+        res.json(deliverables);
+    } catch (err) {
+        console.error('❌ Failed to get deliverables:', err);
+        res.status(500).json({ error: 'Server error while fetching deliverables.' });
+    }
+};
