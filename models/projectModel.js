@@ -372,3 +372,98 @@ exports.getProjectDetailsById = async (projectUuid, companyId) => {
     );
     return result;
     };
+
+
+// --- REPLACE your existing function with this FINAL, CORRECTED version ---
+exports.fetchDataForAllocationCalendar = async (company_id) => {
+    // 1. We run four queries in parallel.
+    
+    // Query A: Get all shoots for ongoing projects.
+    // --- THIS IS THE CRITICAL FIX --- We now use LEFT JOINs to ensure all shoots are included.
+    console.log('company_id:', company_id);
+    const shootsQuery = db.query(`
+        SELECT 
+            s.id, s.title, s.date, s.time, s.city,
+            p.name AS projectName,
+            c.name AS clientName
+        FROM projects p
+        LEFT JOIN shoots s ON p.id = s.project_id
+        LEFT JOIN clients c ON p.client_id = c.id
+        WHERE p.company_id = ? AND p.status = 'ongoing' AND s.id IS NOT NULL
+    `, [company_id]);
+
+    // Query B: Get all allocations for those shoots.
+    const allocationsQuery = db.query(`
+        SELECT 
+            ssa.shoot_id, ssa.service_name, ss.quantity, ssa.employee_firebase_uid
+        FROM shoot_assignments ssa
+        LEFT JOIN shoot_services ss ON ssa.shoot_id = ss.shoot_id AND ssa.service_name = (SELECT name FROM services WHERE id = ss.service_id)
+        WHERE ssa.shoot_id IN (SELECT id FROM shoots WHERE project_id IN (SELECT id FROM projects WHERE company_id = ? AND status = 'ongoing'))
+        UNION
+        SELECT 
+            ss.shoot_id, ser.name as service_name, ss.quantity, ssa.employee_firebase_uid
+        FROM shoot_services ss
+        JOIN services ser ON ss.service_id = ser.id
+        LEFT JOIN shoot_assignments ssa ON ss.shoot_id = ssa.shoot_id AND ser.name = ssa.service_name
+        WHERE ss.shoot_id IN (SELECT id FROM shoots WHERE project_id IN (SELECT id FROM projects WHERE company_id = ? AND status = 'ongoing'))
+    `, [company_id, company_id]);
+
+    // Query C: Get team members with their roles.
+    const teamMembersQuery = db.query(`
+        SELECT 
+            e.firebase_uid AS id, e.name,
+            JSON_ARRAYAGG(CASE WHEN er.type_name IS NOT NULL THEN er.type_name ELSE NULL END) AS roles
+        FROM employees e
+        LEFT JOIN employee_role_assignments era ON e.firebase_uid = era.firebase_uid
+        LEFT JOIN employee_roles er ON era.role_id = er.id
+        WHERE e.company_id = ?
+        GROUP BY e.firebase_uid, e.name
+    `, [company_id]);
+
+    // Query D: Get a simple list of all available roles.
+    const rolesQuery = db.query(`SELECT DISTINCT type_name FROM employee_roles WHERE company_id = ? OR company_id = '00000000-0000-0000-0000-000000000000'`, [company_id]);
+    
+    // 2. Execute all queries at once.
+    const [[shoots], [allocations], [teamMembers], [roleRows]] = await Promise.all([
+        shootsQuery, allocationsQuery, teamMembersQuery, rolesQuery
+    ]);
+    
+    // 3. Process the data into the final structure.
+    const shootsById = shoots.reduce((acc, shoot) => {
+        acc[shoot.id] = {
+            id: shoot.id, eventDate: shoot.date, clientName: shoot.clientName,
+            functionName: shoot.title, location: shoot.city, allocations: {}
+        };
+        return acc;
+    }, {});
+
+    for (const alloc of allocations) {
+        if (shootsById[alloc.shoot_id]) {
+            const service = alloc.service_name;
+            if (!shootsById[alloc.shoot_id].allocations[service]) {
+                shootsById[alloc.shoot_id].allocations[service] = { required: alloc.quantity || 1, assigned: [] };
+            }
+            if (alloc.employee_firebase_uid && !shootsById[alloc.shoot_id].allocations[service].assigned.includes(alloc.employee_firebase_uid)) {
+                shootsById[alloc.shoot_id].allocations[service].assigned.push(alloc.employee_firebase_uid);
+            }
+        }
+    }
+    
+    // 4. Return everything in one clean object, ensuring team member roles are properly parsed.
+    return {
+        shoots: Object.values(shootsById),
+        teamMembers: teamMembers.map(member => {
+            let parsedRoles = [];
+            try {
+                const rolesFromString = JSON.parse(member.roles);
+                if (Array.isArray(rolesFromString)) {
+                    parsedRoles = rolesFromString.filter(role => role !== null);
+                }
+            } catch (e) {
+                parsedRoles = [];
+            }
+            return { ...member, roles: parsedRoles };
+        }),
+        roles: roleRows.map(r => r.type_name)
+    };
+};

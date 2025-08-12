@@ -13,21 +13,29 @@ const {
   getAttendanceForMember,
   getPaymentDetails,
   upsertPaymentDetails,
-  deletePaymentDetails
+  deletePaymentDetails,
+  generateSalariesForMonth,
+  listMonthlySalaries,
+  updateMonthlySalary,
+  updateBaseSalary
 } = require('../controllers/memberController');
 
 const { verifyToken, requireAdminWithActiveCompany } = require('../middleware/auth');
 
 // Protect *all* member routes below:
 router.use(verifyToken, requireAdminWithActiveCompany);
-
+router.post('/salaries/generate', generateSalariesForMonth);
+router.get('/salaries', listMonthlySalaries);
+router.put('/salaries/:id', updateMonthlySalary);
 // — Attendance dashboard —
 router.post('/attendance',           createOrUpdateAttendance);
 router.get('/attendance',            getAllAttendance);
 
+
 // — Member CRUD —
 router.post('/',                     createMember);
 router.get('/',                      getAllMembers);
+router.put('/:uid/salary', updateBaseSalary);
 router.get('/:uid',                  getMemberById);
 router.put('/:uid',                  updateMember);
 router.patch('/:uid/status',         updateStatus);

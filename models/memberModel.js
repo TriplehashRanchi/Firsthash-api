@@ -82,33 +82,54 @@ async function assignRole({ firebase_uid, role_id }) {
 //   return rows;
 // }
 
-async function fetchAllEmployees() {
+// async function fetchAllEmployees() {
+//   const [rows] = await pool.execute(
+//     `SELECT
+//        e.firebase_uid,
+//        e.name,
+//        e.email,
+//        e.phone,
+//        e.employee_type,
+//        e.status,
+//        e.address,
+//        e.salary,
+//        -- If an employee has roles, aggregate them into a JSON array of objects.
+//        -- Each object contains the role's ID and name.
+//        JSON_ARRAYAGG(
+//          CASE
+//            WHEN r.role_id IS NOT NULL THEN JSON_OBJECT('role_id', r.role_id, 'role_name', er.type_name)
+//            ELSE NULL
+//          END
+//        ) AS roles
+//      FROM employees e
+//      LEFT JOIN employee_role_assignments r ON e.firebase_uid = r.firebase_uid
+//      LEFT JOIN employee_roles er ON r.role_id = er.id -- Join with roles table to get the name
+//      GROUP BY e.firebase_uid`
+//   );
+//   // Post-process to clean up the 'roles' field.
+//   // If an employee has no roles, JSON_ARRAYAGG returns [null]. This code changes it to an empty array [].
+//   return rows.map(row => ({
+//     ...row,
+//     roles: row.roles && row.roles[0] !== null ? row.roles : [],
+//   }));
+// }
+
+// This is your fetchAllEmployees function, improved to be secure by filtering by company.
+async function fetchAllEmployees(company_id) {
   const [rows] = await pool.execute(
-    `SELECT
-       e.firebase_uid,
-       e.name,
-       e.email,
-       e.phone,
-       e.employee_type,
-       e.status,
-       e.address,
-       e.salary,
-       -- If an employee has roles, aggregate them into a JSON array of objects.
-       -- Each object contains the role's ID and name.
+    `
+    SELECT
+       e.firebase_uid, e.name, e.email, e.phone, e.employee_type, e.status, e.address, e.salary,
        JSON_ARRAYAGG(
-         CASE
-           WHEN r.role_id IS NOT NULL THEN JSON_OBJECT('role_id', r.role_id, 'role_name', er.type_name)
-           ELSE NULL
-         END
+         CASE WHEN r.role_id IS NOT NULL THEN JSON_OBJECT('role_id', r.role_id, 'role_name', er.type_name) ELSE NULL END
        ) AS roles
      FROM employees e
      LEFT JOIN employee_role_assignments r ON e.firebase_uid = r.firebase_uid
-     LEFT JOIN employee_roles er ON r.role_id = er.id -- Join with roles table to get the name
-     GROUP BY e.firebase_uid`
+     LEFT JOIN employee_roles er ON r.role_id = er.id
+     WHERE e.company_id = ?
+     GROUP BY e.firebase_uid`,
+    [company_id]
   );
-
-  // Post-process to clean up the 'roles' field.
-  // If an employee has no roles, JSON_ARRAYAGG returns [null]. This code changes it to an empty array [].
   return rows.map(row => ({
     ...row,
     roles: row.roles && row.roles[0] !== null ? row.roles : [],
@@ -272,6 +293,56 @@ async function upsertPaymentDetails(uid, {
 }
 
 
+// Your function to update the base salary in the 'employees' table.
+async function updateEmployeeSalary(uid, salary, company_id) {
+  await pool.execute(
+    `UPDATE employees SET salary = ? WHERE firebase_uid = ? AND company_id = ?`,
+    [salary, uid, company_id]
+  );
+  return fetchEmployeeByUid(uid);
+}
+
+
+// NEW: Fetches all generated monthly salary records.
+async function fetchCompanySalaries(company_id) {
+  const [rows] = await pool.execute(
+    `
+    SELECT 
+      s.id, s.firebase_uid, s.period_month, s.period_year, s.amount_due, s.amount_paid, s.status, s.notes,
+      e.name AS employee_name
+    FROM employee_salaries s
+    JOIN employees e ON e.firebase_uid = s.firebase_uid COLLATE utf8mb4_unicode_ci
+    WHERE s.company_id = ?
+    ORDER BY s.period_year DESC, s.period_month DESC, e.name ASC`,
+    [company_id]
+  );
+  return rows;
+}
+
+// NEW: Updates a single monthly salary record.
+async function updateMonthlySalaryRecord({ id, company_id, amount_paid, status, notes }) {
+  await pool.execute(
+    `UPDATE employee_salaries SET amount_paid = ?, status = ?, notes = ? WHERE id = ? AND company_id = ?`,
+    [amount_paid, status, notes, id, company_id]
+  );
+}
+
+// NEW: Generates new monthly records in 'employee_salaries'.
+async function generateMonthlySalaryRecords(company_id, month, year) {
+  const query = `
+    INSERT INTO employee_salaries (company_id, firebase_uid, period_month, period_year, amount_due, status)
+    SELECT ?, firebase_uid, ?, ?, salary, 'pending'
+    FROM employees
+    WHERE company_id = ? AND employee_type = 1 AND salary IS NOT NULL AND salary > 0
+    ON DUPLICATE KEY UPDATE amount_due = VALUES(amount_due);
+  `;
+  const [result] = await pool.execute(query, [company_id, month, year, company_id]);
+  return result;
+}
+
+
+
+
 module.exports = {
   createEmployee,
   assignRole,
@@ -284,5 +355,9 @@ module.exports = {
   fetchPaymentDetails,
   upsertPaymentDetails,
   fetchAllAttendance,
-  upsertAttendance
+  upsertAttendance,
+  updateEmployeeSalary,
+  fetchCompanySalaries,
+  updateMonthlySalaryRecord,
+  generateMonthlySalaryRecords
 };

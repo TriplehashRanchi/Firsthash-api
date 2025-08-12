@@ -11,7 +11,11 @@ const {
   removeRoleAssignments,
   fetchPaymentDetails,
   fetchAllAttendance,
-  upsertAttendance
+  upsertAttendance,
+  updateEmployeeSalary,
+  fetchCompanySalaries,
+  updateMonthlySalaryRecord,
+  generateMonthlySalaryRecords
 } = require("../models/memberModel");
 // File: backend/controllers/memberController.js
 const {
@@ -21,6 +25,7 @@ const {
 const {
   sendWhatsAppsAccountActivated,
 } = require("../utils/sendAiSensyMessage");
+
 
 const GLOBAL_COMPANY_ID = "00000000-0000-0000-0000-000000000000";
 
@@ -109,7 +114,8 @@ exports.createMember = async (req, res) => {
 // Get all members
 exports.getAllMembers = async (req, res) => {
   try {
-    const members = await fetchAllEmployees();
+    const company_id = req.company.id; // From middleware
+    const members = await fetchAllEmployees(company_id);
     res.json(members);
   } catch (err) {
     console.error("getAllMembers error:", err.stack || err);
@@ -287,5 +293,67 @@ exports.deletePaymentDetails = async (req, res) => {
   } catch (err) {
     console.error("deletePaymentDetails error:", err.stack || err);
     res.status(500).json({ error: "Failed to delete payment details" });
+  }
+};
+
+
+exports.updateBaseSalary = async (req, res) => {
+  try {
+    const { uid } = req.params; 
+    const { salary } = req.body; 
+    const company_id = req.company.id; 
+    if (salary === undefined || isNaN(parseFloat(salary))) {
+      return res.status(400).json({ error: 'A valid salary number is required.' });
+    }
+    await updateEmployeeSalary(uid, parseFloat(salary), company_id);
+    res.json({ success: true, message: 'Base salary updated successfully.' });
+  } catch (err) {
+    console.error('updateBaseSalary error:', err);
+    res.status(500).json({ error: 'Failed to update salary' });
+  }
+};
+
+// NEW: Lists all generated monthly payroll records
+exports.listMonthlySalaries = async (req, res) => {
+  try {
+    const company_id = req.company.id;
+    const rows = await fetchCompanySalaries(company_id);
+    res.json(rows);
+  } catch (err) {
+    console.error('listMonthlySalaries error:', err);
+    res.status(500).json({ error: 'Failed to load monthly salaries' });
+  }
+};
+
+// NEW: Updates a single monthly payroll record
+exports.updateMonthlySalary = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount_paid, status, notes = null } = req.body;
+    const company_id = req.company.id;
+    await updateMonthlySalaryRecord({ id, company_id, amount_paid, status, notes });
+    res.json({ success: true, message: 'Monthly record updated.' });
+  } catch (err) {
+    console.error('updateMonthlySalary error:', err);
+    res.status(500).json({ error: 'Failed to update monthly salary' });
+  }
+};
+
+// NEW: Generates payroll for a given month
+exports.generateSalariesForMonth = async (req, res) => {
+  try {
+    const { month, year } = req.body;
+    const company_id = req.company.id;
+    if (!month || !year) {
+      return res.status(400).json({ error: 'Month and year are required.' });
+    }
+    const result = await generateMonthlySalaryRecords(company_id, month, year);
+    res.status(201).json({
+      message: `Successfully generated/updated salaries for ${month}/${year}.`,
+      affectedRows: result.affectedRows
+    });
+  } catch (err) {
+    console.error('generateSalariesForMonth error:', err);
+    res.status(500).json({ error: 'Failed to generate salary records.' });
   }
 };
