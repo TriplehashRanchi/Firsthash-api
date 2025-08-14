@@ -25,6 +25,7 @@ const expenseRoutes = require('./routes/expenseRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const quotationRoutes = require('./routes/quotationRoutes'); // <-- ADD THIS IMPORT
 const financeRoutes = require('./routes/financialRoutes');
+const allExpensesRoutes = require('./routes/allExpenseRoutes');
 
 
 
@@ -53,6 +54,8 @@ app.use('/api/shoots', shootRoutes);
 app.use('/api/projects/:projectId/expenses', expenseRoutes);
 app.use('/api/projects/:projectId/quotations', quotationRoutes);
 app.use('/api/finance', financeRoutes);
+app.use('/api/expenses', allExpensesRoutes); 
+
 
 
 const uploadsBasePath = process.env.NODE_ENV === 'production' 

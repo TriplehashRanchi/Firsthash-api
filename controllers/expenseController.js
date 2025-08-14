@@ -19,7 +19,7 @@ exports.createExpense = async (req, res) => {
 };
 exports.updateExpense = async (req, res) => { 
     try {
-        const expenseId = req.params.id;
+        const expenseId = req.params;
         const company_id = req.user.company_id;
         const { productName, category, expense, date } = req.body; // Assuming date is passed for expense_date
         const updated = await expenseModel.updateExpense(expenseId, company_id, { 
@@ -33,7 +33,7 @@ exports.updateExpense = async (req, res) => {
  };
 exports.deleteExpense = async (req, res) => { 
     try {
-        const expenseId = req.params.id;
+        const expenseId = req.params;
         const company_id = req.user.company_id;
         const deleted = await expenseModel.deleteExpense(expenseId, company_id);
         if (!deleted) {
@@ -42,3 +42,21 @@ exports.deleteExpense = async (req, res) => {
         res.json({ message: 'Expense deleted successfully.' });
     } catch (err) { res.status(500).json({ error: 'Server error.' }); }
  };
+
+
+
+exports.getAllExpensesForDashboard = async (req, res) => {
+    try {
+        console.log("IN GET ALL EXPENSES FOR DASHBOARD, REQ.USER:", req.user);
+        console.log("IN GET ALL EXPENSES FOR DASHBOARD, REQ.COMPANY:", req.company);
+        const company_id = req.user.company_id;
+        if (!company_id) {
+            return res.status(403).json({ error: 'Company ID not found in token.' });
+        }
+        const expenses = await expenseModel.getAllExpensesWithProjectInfo(company_id);
+        res.json(expenses);
+    } catch (err) {
+        console.error('❌ Failed to fetch dashboard expenses:', err);
+        res.status(500).json({ error: 'Server error while fetching dashboard expenses.' });
+    }
+};

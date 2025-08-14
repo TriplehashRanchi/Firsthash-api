@@ -8,6 +8,8 @@ const {
   getAllProjectsWithDetails,
   getProjectDetailsById,
   updateStatusById,
+  fetchAllRoles,
+  fetchDataForAllocationCalendar,
 } = require('../models/projectModel');
 const {addPayment} = require('../models/paymentModel');
 
@@ -68,6 +70,9 @@ exports.createFullProject = async (req, res) => {
 // This is the new function you need to add.
 exports.getProjectsList = async (req, res) => {
   try {
+
+    console.log("IN GET PROJECTS LIST, REQ.USER:", req.user); // Check what the middleware provides
+    console.log("IN GET PROJECTS LIST, REQ.COMPANY:", req.company); 
     // 1. Get the company_id from your authentication middleware
     const company_id = req.company.id; 
 
@@ -162,4 +167,16 @@ exports.updateProjectStatus = async (req, res) => {
     console.error('❌ Failed to update project status:', err);
     res.status(500).json({ error: 'Server error while updating project status.' });
   }
+};
+
+
+exports.getAllocationsData = async (req, res) => {
+    try {
+        const company_id = req.company.id;
+        const allocationData = await fetchDataForAllocationCalendar(company_id);
+        res.json(allocationData);
+    } catch (err) {
+        console.error('❌ Failed to fetch allocation data:', err);
+        res.status(500).json({ error: 'Server error while fetching allocation data.' });
+    }
 };
