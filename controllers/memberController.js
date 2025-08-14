@@ -11,7 +11,20 @@ const {
   removeRoleAssignments,
   fetchPaymentDetails,
   fetchAllAttendance,
-  upsertAttendance
+  upsertAttendance,
+  updateEmployeeSalary,
+  fetchCompanySalaries,
+  updateMonthlySalaryRecord,
+  generateMonthlySalaryRecords,
+  fetchSalaryHistoryForEmployee,
+  paySingleMonthSalary,
+  payAllDueSalariesForEmployee,
+  fetchFreelancerSummaries,
+  createFreelancerPayment,
+  fetchFreelancerHistory,
+  fetchUnbilledAssignmentsForFreelancer,
+  billAssignment,
+  
 } = require("../models/memberModel");
 // File: backend/controllers/memberController.js
 const {
@@ -21,6 +34,7 @@ const {
 const {
   sendWhatsAppsAccountActivated,
 } = require("../utils/sendAiSensyMessage");
+
 
 const GLOBAL_COMPANY_ID = "00000000-0000-0000-0000-000000000000";
 
@@ -109,7 +123,8 @@ exports.createMember = async (req, res) => {
 // Get all members
 exports.getAllMembers = async (req, res) => {
   try {
-    const members = await fetchAllEmployees();
+    const company_id = req.company.id; // From middleware
+    const members = await fetchAllEmployees(company_id);
     res.json(members);
   } catch (err) {
     console.error("getAllMembers error:", err.stack || err);
@@ -288,4 +303,180 @@ exports.deletePaymentDetails = async (req, res) => {
     console.error("deletePaymentDetails error:", err.stack || err);
     res.status(500).json({ error: "Failed to delete payment details" });
   }
+};
+
+
+exports.updateBaseSalary = async (req, res) => {
+  try {
+    const { uid } = req.params; 
+    const { salary } = req.body; 
+    const company_id = req.company.id; 
+    if (salary === undefined || isNaN(parseFloat(salary))) {
+      return res.status(400).json({ error: 'A valid salary number is required.' });
+    }
+    await updateEmployeeSalary(uid, parseFloat(salary), company_id);
+    res.json({ success: true, message: 'Base salary updated successfully.' });
+  } catch (err) {
+    console.error('updateBaseSalary error:', err);
+    res.status(500).json({ error: 'Failed to update salary' });
+  }
+};
+
+// NEW: Lists all generated monthly payroll records
+exports.listMonthlySalaries = async (req, res) => {
+  try {
+    const company_id = req.company.id;
+    const rows = await fetchCompanySalaries(company_id);
+    res.json(rows);
+  } catch (err) {
+    console.error('listMonthlySalaries error:', err);
+    res.status(500).json({ error: 'Failed to load monthly salaries' });
+  }
+};
+
+// NEW: Updates a single monthly payroll record
+exports.updateMonthlySalary = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount_paid, status, notes = null } = req.body;
+    const company_id = req.company.id;
+    await updateMonthlySalaryRecord({ id, company_id, amount_paid, status, notes });
+    res.json({ success: true, message: 'Monthly record updated.' });
+  } catch (err) {
+    console.error('updateMonthlySalary error:', err);
+    res.status(500).json({ error: 'Failed to update monthly salary' });
+  }
+};
+
+// NEW: Generates payroll for a given month
+exports.generateSalariesForMonth = async (req, res) => {
+  try {
+    const { month, year } = req.body;
+    const company_id = req.company.id;
+    if (!month || !year) {
+      return res.status(400).json({ error: 'Month and year are required.' });
+    }
+    const result = await generateMonthlySalaryRecords(company_id, month, year);
+    res.status(201).json({
+      message: `Successfully generated/updated salaries for ${month}/${year}.`,
+      affectedRows: result.affectedRows
+    });
+  } catch (err) {
+    console.error('generateSalariesForMonth error:', err);
+    res.status(500).json({ error: 'Failed to generate salary records.' });
+  }
+};
+
+exports.getSalaryHistoryForEmployee = async (req, res) => {
+  try {
+    const { uid } = req.params; // The employee's firebase_uid from the URL
+    const company_id = req.company.id; // From your auth middleware
+
+    const history = await fetchSalaryHistoryForEmployee(uid, company_id);
+    
+    // The model will return an array, which could be empty. This is expected.
+    res.json(history);
+
+  } catch (err) {
+    console.error('getSalaryHistoryForEmployee error:', err);
+    res.status(500).json({ error: 'Failed to load salary history.' });
+  }
+};
+
+
+exports.paySalaryForSingleMonth = async (req, res) => {
+  try {
+    const { salaryId } = req.body;
+    const company_id = req.company.id; // From middleware
+
+    if (!salaryId) {
+      return res.status(400).json({ error: 'Salary record ID is required.' });
+    }
+
+    const result = await paySingleMonthSalary(salaryId, company_id);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Salary record not found or you do not have permission to update it.' });
+    }
+
+    res.json({ success: true, message: 'Payment for the month recorded successfully.' });
+  } catch (err) {
+    console.error('paySalaryForSingleMonth error:', err);
+    res.status(500).json({ error: 'Failed to record payment.' });
+  }
+};
+
+// NEW: Controller to pay all outstanding dues for an employee
+exports.payAllDueSalaries = async (req, res) => {
+  try {
+    const { employeeUid } = req.body;
+    const company_id = req.company.id; // From middleware
+
+    if (!employeeUid) {
+      return res.status(400).json({ error: 'Employee UID is required.' });
+    }
+
+    await payAllDueSalariesForEmployee(employeeUid, company_id);
+
+    res.json({ success: true, message: 'All due payments have been recorded successfully.' });
+  } catch (err) {
+    console.error('payAllDueSalaries error:', err);
+    res.status(500).json({ error: 'Failed to record payments.' });
+  }
+};
+
+// Controller to get all freelancers with their financial summaries
+exports.getFreelancerSummaries = async (req, res) => {
+    try {
+        const company_id = req.company.id; // From middleware
+        const summaries = await fetchFreelancerSummaries(company_id);
+        res.json(summaries);
+    } catch (err) {
+        console.error('getFreelancerSummaries error:', err);
+        res.status(500).json({ error: 'Failed to load freelancer summaries.' });
+    }
+};
+// Controller to record a payment to a freelancer
+exports.addFreelancerPayment = async (req, res) => {
+    const { freelancer_uid, payment_amount, notes } = req.body;
+    if (!freelancer_uid || !payment_amount) {
+        return res.status(400).json({ error: 'Freelancer UID and payment amount are required.' });
+    }
+    try {
+        await createFreelancerPayment({ freelancer_uid, payment_amount, notes });
+        res.status(201).json({ message: 'Payment recorded successfully.' });
+    } catch (err) {
+        console.error('addFreelancerPayment error:', err);
+        res.status(500).json({ error: 'Failed to record payment.' });
+    }
+};
+
+exports.getUnbilledAssignments = async (req, res) => {
+    try {
+        const { uid } = req.params;
+        const assignments = await fetchUnbilledAssignmentsForFreelancer(uid);
+        res.json(assignments);
+    } catch (err) { /* ... error handling ... */ }
+};
+
+exports.billFreelancerAssignment = async (req, res) => {
+    // The assignment_id might be a composite key like 'task_id-uid' or a simple ID
+    const { freelancer_uid, assignment_type, assignment_id, fee } = req.body;
+    const company_id = req.company.id;
+    if (!freelancer_uid || !assignment_type || !assignment_id || !fee) {
+        return res.status(400).json({ error: 'All fields are required to bill an assignment.' });
+    }
+    try {
+        // The model expects a simple integer ID. We get this from the body.
+        await billAssignment({ freelancer_uid, assignment_type, assignment_id, fee, company_id });
+        res.status(201).json({ message: 'Assignment has been billed successfully.' });
+    }catch (err) { /* ... error handling ... */ }
+};
+
+exports.getFreelancerHistory = async (req, res) => {
+    try {
+        const { uid } = req.params;
+        const history = await fetchFreelancerHistory(uid);
+        res.json(history);
+    } catch (err) { /* ... error handling ... */ }
 };

@@ -1,10 +1,19 @@
-// File: routes/expenseRoutes.js
-const express = require('express');
-const router = express.Router({ mergeParams: true }); // mergeParams is important for nested routes
-const { createExpense, updateExpense, deleteExpense } = require('../controllers/expenseController');
-const {  verifyToken, requireAdminWithActiveCompany } = require('../middleware/auth');
+// File: backend/routes/expenseRoutes.js
+// PURPOSE: Handles routes for expenses belonging to a SINGLE project.
 
+const express = require('express');
+const router = express.Router({ mergeParams: true }); // mergeParams is essential
+const { createExpense, updateExpense, deleteExpense } = require('../controllers/expenseController');
+const { verifyToken, requireAdminWithActiveCompany } = require('../middleware/auth');
+
+// POST /api/projects/:projectId/expenses/
+// Creates a new expense for the given project.
 router.post('/', verifyToken, requireAdminWithActiveCompany, createExpense);
-router.route('/:expenseId').put(verifyToken, requireAdminWithActiveCompany, updateExpense).delete(verifyToken, requireAdminWithActiveCompany, deleteExpense);
+
+// PUT & DELETE /api/projects/:projectId/expenses/:expenseId
+// Updates or deletes a specific expense.
+router.route('/:expenseId')
+    .put(verifyToken, requireAdminWithActiveCompany, updateExpense)
+    .delete(verifyToken, requireAdminWithActiveCompany, deleteExpense);
 
 module.exports = router;
