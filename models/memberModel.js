@@ -333,15 +333,155 @@ async function generateMonthlySalaryRecords(company_id, month, year) {
     INSERT INTO employee_salaries (company_id, firebase_uid, period_month, period_year, amount_due, status)
     SELECT ?, firebase_uid, ?, ?, salary, 'pending'
     FROM employees
-    WHERE company_id = ? AND employee_type = 1 AND salary IS NOT NULL AND salary > 0
+    WHERE company_id = ? AND employee_type IN (0, 1) AND salary IS NOT NULL AND salary > 0
     ON DUPLICATE KEY UPDATE amount_due = VALUES(amount_due);
   `;
   const [result] = await pool.execute(query, [company_id, month, year, company_id]);
   return result;
 }
 
+async function fetchSalaryHistoryForEmployee(uid, company_id) {
+  const [rows] = await pool.execute(
+    `
+    SELECT 
+      id, firebase_uid, period_month, period_year, amount_due, amount_paid, status, notes
+    FROM employee_salaries
+    WHERE firebase_uid = ? AND company_id = ?
+    ORDER BY period_year DESC, period_month DESC`,
+    [uid, company_id]
+  );
+  return rows;
+}
 
 
+async function paySingleMonthSalary(salaryId, company_id) {
+  const query = `
+    UPDATE employee_salaries 
+    SET amount_paid = amount_due, status = 'complete' 
+    WHERE id = ? AND company_id = ?`;
+  const [result] = await pool.execute(query, [salaryId, company_id]);
+  return result;
+}
+
+// NEW: Marks all unpaid or partially paid salaries for an employee as fully paid.
+async function payAllDueSalariesForEmployee(employeeUid, company_id) {
+  const query = `
+    UPDATE employee_salaries
+    SET amount_paid = amount_due, status = 'complete'
+    WHERE firebase_uid = ? 
+      AND company_id = ? 
+      AND (amount_paid < amount_due OR amount_paid IS NULL)`;
+  const [result] = await pool.execute(query, [employeeUid, company_id]);
+  return result;
+}
+
+// REPLACE the existing fetchFreelancerSummaries function with this one.
+
+async function fetchFreelancerSummaries(company_id) {
+  const query = `
+    SELECT
+        e.firebase_uid, e.name,
+        JSON_ARRAYAGG(CASE WHEN r.role_id IS NOT NULL THEN JSON_OBJECT('role_id', r.role_id, 'role_name', er.type_name) ELSE NULL END) AS roles,
+        COALESCE((SELECT SUM(fb.fee) FROM freelancer_billings fb WHERE fb.freelancer_uid = e.firebase_uid AND fb.company_id = ?), 0) as total_billed,
+        COALESCE((SELECT SUM(fp.payment_amount) FROM freelancer_payments fp WHERE fp.freelancer_uid = e.firebase_uid), 0) as total_paid,
+        (
+            -- This subquery for shoots is correct, as it has a unique 'id'
+            (SELECT COUNT(sa.id) FROM shoot_assignments sa WHERE sa.employee_firebase_uid = e.firebase_uid AND NOT EXISTS (SELECT 1 FROM freelancer_billings fb WHERE fb.assignment_id = sa.id AND fb.assignment_type = 'shoot')) +
+            
+            -- CORRECTED SUBQUERY FOR TASKS --
+            -- We count task_id and check for existence using a composite key (task_id + freelancer_uid)
+            (SELECT COUNT(ta.task_id) FROM task_assignees ta 
+             WHERE ta.employee_firebase_uid = e.firebase_uid 
+             AND NOT EXISTS (
+                SELECT 1 FROM freelancer_billings fb 
+                WHERE fb.assignment_type = 'task'
+                AND fb.assignment_id_composite = CONCAT(ta.task_id, '-', ta.employee_firebase_uid)
+             ))
+        ) as unbilled_assignments_count
+    FROM employees e
+    LEFT JOIN employee_role_assignments r ON e.firebase_uid = r.firebase_uid
+    LEFT JOIN employee_roles er ON r.role_id = er.id
+    WHERE e.company_id = ? AND e.employee_type = 0 AND e.status = 'active'
+    GROUP BY e.firebase_uid`;
+
+  const [freelancers] = await pool.execute(query, [company_id, company_id]);
+  return freelancers.map(f => ({
+      ...f,
+      roles: f.roles && f.roles[0] !== null ? f.roles : [],
+      remaining_balance: (parseFloat(f.total_billed) - parseFloat(f.total_paid)).toFixed(2)
+  }));
+}
+
+async function fetchUnbilledAssignmentsForFreelancer(freelancer_uid) {
+  // Shoots query is correct and uses its unique 'id'
+  const shootsQuery = `
+      SELECT sa.id, 'shoot' as type, CONCAT(p.name, ' - ', sa.service_name) as title
+      FROM shoot_assignments sa
+      LEFT JOIN freelancer_billings fb ON sa.id = fb.assignment_id AND fb.assignment_type = 'shoot'
+      JOIN shoots s ON sa.shoot_id = s.id
+      JOIN projects p ON s.project_id = p.id
+      WHERE sa.employee_firebase_uid = ? AND fb.id IS NULL`;
+  const [shootAssignments] = await pool.execute(shootsQuery, [freelancer_uid]);
+
+  // CORRECTED TASKS QUERY
+  // It now creates a composite ID for the frontend to use
+  const tasksQuery = `
+      SELECT 
+          CONCAT(ta.task_id, '-', ta.employee_firebase_uid) as id, 
+          'task' as type, 
+          t.title
+      FROM task_assignees ta
+      LEFT JOIN freelancer_billings fb ON fb.assignment_id_composite = CONCAT(ta.task_id, '-', ta.employee_firebase_uid) AND fb.assignment_type = 'task'
+      JOIN tasks t ON ta.task_id = t.id
+      WHERE ta.employee_firebase_uid = ? AND fb.id IS NULL AND t.project_id IS NOT NULL`;
+  const [taskAssignments] = await pool.execute(tasksQuery, [freelancer_uid]);
+  
+  return [...shootAssignments, ...taskAssignments];
+}
+
+
+async function billAssignment({ freelancer_uid, assignment_type, assignment_id, fee, company_id }) {
+  // We now use the appropriate ID based on the type
+  let assignmentIdField = 'assignment_id';
+  let assignmentIdValue = assignment_id;
+
+  if (assignment_type === 'task') {
+      assignmentIdField = 'assignment_id_composite';
+  }
+  
+  const query = `INSERT INTO freelancer_billings (freelancer_uid, assignment_type, ${assignmentIdField}, fee, billing_date, company_id) VALUES (?, ?, ?, ?, ?, ?)`;
+  await pool.execute(query, [freelancer_uid, assignment_type, assignmentIdValue, fee, new Date(), company_id]);
+}
+
+async function fetchFreelancerHistory(freelancer_uid) {
+    // This query is now more complex to handle the lack of ID on tasks
+  const billed_items_query = `
+      (SELECT 'shoot' as type, sa.id, p.name as project_name, sa.service_name, fb.fee, fb.billing_date 
+       FROM freelancer_billings fb 
+       JOIN shoot_assignments sa ON fb.assignment_id = sa.id AND fb.assignment_type = 'shoot'
+       JOIN shoots s ON sa.shoot_id = s.id 
+       JOIN projects p ON s.project_id = p.id 
+       WHERE fb.freelancer_uid = ?)
+      UNION ALL
+      (SELECT 'task' as type, fb.id, t.title as project_name, NULL as service_name, fb.fee, fb.billing_date 
+       FROM freelancer_billings fb 
+       JOIN tasks t ON SUBSTRING_INDEX(fb.assignment_id_composite, '-', 1) = t.id
+       WHERE fb.freelancer_uid = ? AND fb.assignment_type = 'task')
+      ORDER BY billing_date DESC`;
+  const [billed_items] = await pool.execute(billed_items_query, [freelancer_uid, freelancer_uid]);
+  // ... (rest of the function is the same)
+  const payments_query = "SELECT id, payment_amount, notes, payment_date FROM freelancer_payments WHERE freelancer_uid = ? ORDER BY payment_date DESC";
+  const [payments] = await pool.execute(payments_query, [freelancer_uid]);
+  return { billed_items, payments };
+}
+
+
+async function createFreelancerPayment({ freelancer_uid, payment_amount, notes }) {
+  await pool.execute(
+    "INSERT INTO freelancer_payments (freelancer_uid, payment_amount, notes, payment_date) VALUES (?, ?, ?, ?)",
+    [freelancer_uid, payment_amount, notes || null, new Date()]
+  );
+}
 
 module.exports = {
   createEmployee,
@@ -359,5 +499,14 @@ module.exports = {
   updateEmployeeSalary,
   fetchCompanySalaries,
   updateMonthlySalaryRecord,
-  generateMonthlySalaryRecords
+  generateMonthlySalaryRecords,
+  fetchSalaryHistoryForEmployee,
+  paySingleMonthSalary,
+  payAllDueSalariesForEmployee,
+  fetchFreelancerSummaries,
+  createFreelancerPayment,
+  fetchFreelancerHistory,
+  billAssignment,
+  fetchUnbilledAssignmentsForFreelancer,
+  
 };
