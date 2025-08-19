@@ -121,15 +121,9 @@ if (mode.mode === 'json_b64') {
   });
 }
 
-// Avoid double init (Next.js/dev tools)
-const app = admin.apps.length
-  ? admin.app()
-  : admin.initializeApp({ credential });
-
-if (process.env.NODE_ENV !== 'production') {
-  console.log(`✅ Firebase Admin initialized using mode: ${mode.mode}`);
+if (!admin.apps.length) {
+  admin.initializeApp({ credential });
 }
 
-module.exports = admin;              // default export the SDK instance
-module.exports.app = admin.app();
+module.exports = admin; //
 
