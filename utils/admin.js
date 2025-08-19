@@ -130,5 +130,6 @@ if (process.env.NODE_ENV !== 'production') {
   console.log(`✅ Firebase Admin initialized using mode: ${mode.mode}`);
 }
 
-module.exports = { admin, app };
+module.exports = admin;              // default export the SDK instance
+module.exports.app = admin.app();
 
