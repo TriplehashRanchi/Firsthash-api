@@ -3,6 +3,7 @@ const pool = require('../config/db');
 const bcrypt = require('bcrypt');
 const SALT_ROUNDS = 10;
 
+// backend/models/memberModel.js
 async function createEmployee({
   firebase_uid,
   employee_type,
@@ -11,38 +12,23 @@ async function createEmployee({
   phone,
   company_id,
 }) {
-  console.log(firebase_uid,
-  employee_type,
-  email,
-  name,
-  phone,
-  company_id,);
-  // const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
-
   await pool.execute(
     `INSERT INTO employees
       (firebase_uid, employee_type, email, name, phone, company_id, status)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [firebase_uid, employee_type, email, name, phone, company_id, , 'active']
+    [firebase_uid, employee_type, email, name, phone, company_id, 'active'] // <-- fixed
   );
 
   const [[row]] = await pool.execute(
     `SELECT
-       firebase_uid,
-       email,
-       name,
-       phone,
-       company_id,
-       employee_type,
-       status,
-       created_at,
-       updated_at
+       firebase_uid, email, name, phone, company_id, employee_type, status, created_at, updated_at
      FROM employees
      WHERE firebase_uid = ?`,
     [firebase_uid]
   );
   return row;
 }
+
 
 async function assignRole({ firebase_uid, role_id }) {
   await pool.execute(
