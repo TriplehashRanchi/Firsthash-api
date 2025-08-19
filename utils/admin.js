@@ -25,94 +25,109 @@
 // module.exports = admin;
 
 
-// utils/admin.js
+// /app/utils/admin.js
 require('dotenv').config();
 const admin = require('firebase-admin');
 
-/**
- * Turn whatever the hosting platform gives us into a valid PEM string.
- * - Supports FIREBASE_PRIVATE_KEY_B64 (base64-encoded key) OR FIREBASE_PRIVATE_KEY (escaped \n)
- * - Strips accidental wrapping quotes/backticks
- * - Unescapes \n repeatedly (handles "\\n" and "\\\\n" cases)
- * - Removes \r (CRLF) and ensures trailing newline after END line
- */
-function resolvePrivateKey() {
-  // Preferred path: base64 (most reliable across Render/Railway/GitHub Actions)
-  const b64 = process.env.FIREBASE_PRIVATE_KEY_B64;
-  if (b64 && b64.trim()) {
-    let k = Buffer.from(b64.trim(), 'base64').toString('utf8');
-    k = k.replace(/\r/g, '');
-    if (!k.endsWith('\n')) k += '\n';
-    return k;
+function decodeB64(name) {
+  const v = process.env[name];
+  if (!v || !v.trim()) return null;
+  try {
+    return Buffer.from(v.trim(), 'base64').toString('utf8');
+  } catch {
+    throw new Error(`${name} is not valid base64.`);
   }
-
-  // Fallback: escaped newlines in env var
-  let k = process.env.FIREBASE_PRIVATE_KEY || '';
-  k = k.trim();
-
-  // Strip accidental wrapping quotes/backticks from secret UIs
-  if (
-    (k.startsWith('"') && k.endsWith('"')) ||
-    (k.startsWith("'") && k.endsWith("'")) ||
-    (k.startsWith('`') && k.endsWith('`'))
-  ) {
-    k = k.slice(1, -1);
-  }
-
-  // Repeatedly unescape \n until none remain (handles \n, \\n, \\\\n edge cases)
-  let guard = 0;
-  while (k.includes('\\n') && guard < 5) {
-    k = k.replace(/\\n/g, '\n');
-    guard++;
-  }
-
-  // Remove CRs (Windows newlines)
-  k = k.replace(/\r/g, '');
-
-  // Ensure single trailing newline (OpenSSL is picky)
-  if (!k.endsWith('\n')) k += '\n';
-
-  return k;
 }
 
-function sanityCheckPem(k) {
-  // Do NOT log the key. Just validate its *shape*.
-  const hasBegin = k.includes('-----BEGIN PRIVATE KEY-----');
-  const hasEnd   = k.includes('-----END PRIVATE KEY-----');
-  const newlineCount = (k.match(/\n/g) || []).length;
+function stripWrappingQuotes(s) {
+  if (!s) return s;
+  s = s.trim();
+  if ((s.startsWith('"') && s.endsWith('"')) ||
+      (s.startsWith("'") && s.endsWith("'")) ||
+      (s.startsWith('`') && s.endsWith('`'))) {
+    return s.slice(1, -1);
+  }
+  return s;
+}
 
-  if (!hasBegin || !hasEnd || newlineCount < 3) {
-    const head = k.slice(0, 50);
-    const tail = k.slice(-50);
+function toPemFromEnv() {
+  // 1) Entire JSON (best): FIREBASE_CREDENTIALS_B64
+  const credsB64 = decodeB64('FIREBASE_CREDENTIALS_B64');
+  if (credsB64) {
+    // JSON.parse converts "\n" to real newlines in the private_key automatically.
+    const sa = JSON.parse(credsB64);
+    return { mode: 'json_b64', serviceAccount: sa };
+  }
+
+  // 2) PEM (base64): FIREBASE_PRIVATE_KEY_B64
+  const pemB64 = decodeB64('FIREBASE_PRIVATE_KEY_B64');
+  if (pemB64) {
+    let pk = pemB64.replace(/\r/g, '');
+    if (!pk.endsWith('\n')) pk += '\n';
+    return { mode: 'pem_b64', privateKey: pk };
+  }
+
+  // 3) PEM (escaped \n): FIREBASE_PRIVATE_KEY
+  let pk = process.env.FIREBASE_PRIVATE_KEY || '';
+  pk = stripWrappingQuotes(pk);
+
+  // Unescape multiple layers of \n (handles \\n and \\\\n)
+  for (let i = 0; i < 5 && pk.includes('\\n'); i++) {
+    pk = pk.replace(/\\n/g, '\n');
+  }
+  pk = pk.replace(/\r/g, '');
+  if (!pk.endsWith('\n')) pk += '\n';
+  return { mode: 'pem_env', privateKey: pk };
+}
+
+function validatePemShape(pem) {
+  const hasBegin = pem.includes('-----BEGIN PRIVATE KEY-----');
+  const hasEnd   = pem.includes('-----END PRIVATE KEY-----');
+  const nl = (pem.match(/\n/g) || []).length;
+  if (!hasBegin || !hasEnd || nl < 3) {
+    const head = JSON.stringify(pem.slice(0, 60));
+    const tail = JSON.stringify(pem.slice(-60));
     throw new Error(
-      [
-        'FIREBASE_PRIVATE_KEY still malformed after cleanup.',
-        `Contains BEGIN: ${hasBegin}, END: ${hasEnd}, newlineCount: ${newlineCount}`,
-        // Show the first/last chars only (safe), to catch stray quotes/backticks
-        `Start preview: ${JSON.stringify(head)}`,
-        `End preview: ${JSON.stringify(tail)}`
-      ].join(' | ')
+      `Private key malformed after cleanup. hasBegin=${hasBegin} hasEnd=${hasEnd} newlineCount=${nl} start=${head} end=${tail}`
     );
   }
 }
 
-const privateKey = resolvePrivateKey();
-sanityCheckPem(privateKey);
+const mode = toPemFromEnv();
 
-// Avoid double init in dev/hot-reload
-const app =
-  admin.apps.length
-    ? admin.app()
-    : admin.initializeApp({
-        credential: admin.credential.cert({
-          projectId: process.env.FIREBASE_PROJECT_ID,
-          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-          privateKey
-        })
-      });
+let credential;
+if (mode.mode === 'json_b64') {
+  const sa = mode.serviceAccount;
+  if (!sa.project_id || !sa.client_email || !sa.private_key) {
+    throw new Error('FIREBASE_CREDENTIALS_B64 decoded, but JSON missing project_id/client_email/private_key.');
+  }
+  // No PEM validation needed; firebase-admin accepts the object as-is.
+  credential = admin.credential.cert({
+    projectId: sa.project_id,
+    clientEmail: sa.client_email,
+    privateKey: sa.private_key,
+  });
+} else {
+  const projectId = process.env.FIREBASE_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  if (!projectId || !clientEmail) {
+    throw new Error('FIREBASE_PROJECT_ID and FIREBASE_CLIENT_EMAIL must be set.');
+  }
+  validatePemShape(mode.privateKey);
+  credential = admin.credential.cert({
+    projectId,
+    clientEmail,
+    privateKey: mode.privateKey,
+  });
+}
+
+// Avoid double init (Next.js/dev tools)
+const app = admin.apps.length
+  ? admin.app()
+  : admin.initializeApp({ credential });
 
 if (process.env.NODE_ENV !== 'production') {
-  console.log('✅ Firebase Admin initialized.');
+  console.log(`✅ Firebase Admin initialized using mode: ${mode.mode}`);
 }
 
 module.exports = { admin, app };
