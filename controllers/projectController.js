@@ -8,8 +8,10 @@ const {
   getAllProjectsWithDetails,
   getProjectDetailsById,
   updateStatusById,
+  updateFullProject,
   fetchAllRoles,
   fetchDataForAllocationCalendar,
+  
 } = require('../models/projectModel');
 const {addPayment} = require('../models/paymentModel');
 
@@ -117,6 +119,31 @@ exports.getProjectById = async (req, res) => {
     // and send a generic 500 Server Error status.
     console.error('❌ Failed to fetch project details:', err);
     res.status(500).json({ error: 'An error occurred while fetching project details.' });
+  }
+};
+
+
+// --- 2. ADD THIS ENTIRE NEW FUNCTION TO THE END OF THE FILE ---
+exports.updateFullProject = async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const companyId = req.company.id;
+    const projectData = req.body; // The full project object from the frontend
+
+    // Basic validation
+    if (!projectData.projectName || !projectData.clients) {
+      return res.status(400).json({ error: 'Missing project name or client details.' });
+    }
+
+    // Call the new, dedicated model function for updating
+    await updateFullProject(projectId, companyId, projectData);
+
+    // Send a success response
+    res.json({ success: true, message: 'Project updated successfully.' });
+
+  } catch (err) {
+    console.error('❌ Controller failed to update project:', err);
+    res.status(500).json({ error: 'Server error while updating project.' });
   }
 };
 
