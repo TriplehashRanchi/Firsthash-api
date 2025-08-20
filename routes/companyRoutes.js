@@ -3,7 +3,8 @@ const router = express.Router();
 const { 
     getCompanyByUid, // This can be used for public viewing of profiles
     updateCompany,
-    deleteCompany
+    deleteCompany,
+     getCompanyByIdController, 
 } = require('../controllers/companyController');
 
 // IMPORTANT: Import your authentication middleware here.
@@ -13,6 +14,8 @@ const { verifyToken } = require('../middleware/auth');
 // --- Public Route (Does not need authentication) ---
 // Anyone can view a company profile if they have the UID.
 router.get('/by-uid/:firebase_uid', getCompanyByUid);
+
+router.get('/by-id/:company_id', getCompanyByIdController);
 
 
 // --- Protected Routes (Requires a valid token) ---

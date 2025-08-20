@@ -10,4 +10,6 @@ router.get('/:id', verifyToken, requireAdminWithActiveCompany, projectController
 router.post('/:projectId/payments', verifyToken, requireAdminWithActiveCompany, projectController.addReceivedPayment);
 router.put('/:id/status', verifyToken, requireAdminWithActiveCompany, projectController.updateProjectStatus);
 
+router.put('/:id', verifyToken, requireAdminWithActiveCompany, projectController.updateFullProject);
+
 module.exports = router;

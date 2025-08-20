@@ -89,7 +89,11 @@ const templateData = {
     const templatePath = path.join(process.cwd(), 'templates', 'financials.ejs');
     const html = await ejs.renderFile(templatePath, templateData);
 
-    const uploadsDir = path.join(process.cwd(), 'uploads', 'financials');
+    const uploadsBasePath = process.env.NODE_ENV === 'production' 
+        ? '/usr/src/app/uploads' 
+        : path.join(process.cwd(), 'uploads');
+
+    const uploadsDir = path.join(uploadsBasePath, 'financials');
     fs.mkdirSync(uploadsDir, { recursive: true });
 
     const fileName = `financials-${projectId}-${uuidv4()}.pdf`;
@@ -307,8 +311,10 @@ exports.markPaymentAsPaid = async (req, res) => {
     // 4. Generate the new PDF
     const templatePath = path.join(process.cwd(), 'templates', 'financials.ejs');
     const html = await ejs.renderFile(templatePath, templateData);
-
-    const uploadsDir = path.join(process.cwd(), 'uploads', 'financials');
+    const uploadsBasePath = process.env.NODE_ENV === 'production' 
+        ? '/usr/src/app/uploads' 
+        : path.join(process.cwd(), 'uploads');
+    const uploadsDir = path.join(uploadsBasePath, 'financials');
     fs.mkdirSync(uploadsDir, { recursive: true });
 
     const fileName = `financials-paid-${projectId}-${uuidv4()}.pdf`;

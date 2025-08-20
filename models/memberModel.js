@@ -3,6 +3,7 @@ const pool = require('../config/db');
 const bcrypt = require('bcrypt');
 const SALT_ROUNDS = 10;
 
+// backend/models/memberModel.js
 async function createEmployee({
   firebase_uid,
   employee_type,
@@ -11,38 +12,23 @@ async function createEmployee({
   phone,
   company_id,
 }) {
-  console.log(firebase_uid,
-  employee_type,
-  email,
-  name,
-  phone,
-  company_id,);
-  // const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
-
   await pool.execute(
     `INSERT INTO employees
       (firebase_uid, employee_type, email, name, phone, company_id, status)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [firebase_uid, employee_type, email, name, phone, company_id, , 'active']
+    [firebase_uid, employee_type, email, name, phone, company_id, 'active'] // <-- fixed
   );
 
   const [[row]] = await pool.execute(
     `SELECT
-       firebase_uid,
-       email,
-       name,
-       phone,
-       company_id,
-       employee_type,
-       status,
-       created_at,
-       updated_at
+       firebase_uid, email, name, phone, company_id, employee_type, status, created_at, updated_at
      FROM employees
      WHERE firebase_uid = ?`,
     [firebase_uid]
   );
   return row;
 }
+
 
 async function assignRole({ firebase_uid, role_id }) {
   await pool.execute(
@@ -130,10 +116,23 @@ async function fetchAllEmployees(company_id) {
      GROUP BY e.firebase_uid`,
     [company_id]
   );
-  return rows.map(row => ({
-    ...row,
-    roles: row.roles && row.roles[0] !== null ? row.roles : [],
-  }));
+  return rows.map(row => {
+    let roles = [];
+    try {
+        if (row.roles && typeof row.roles === 'string' && row.roles.trim() !== '' && row.roles !== '[null]') {
+            const parsedRoles = JSON.parse(row.roles);
+            // Ensure we don't return [null] for employees with no roles
+            if (Array.isArray(parsedRoles) && parsedRoles[0] !== null) {
+                roles = parsedRoles;
+            }
+        } else if (Array.isArray(row.roles) && row.roles[0] !== null) {
+            roles = row.roles;
+        }
+    } catch (e) {
+        console.error("Failed to parse roles JSON in fetchAllEmployees:", row.roles);
+    }
+    return { ...row, roles };
+  });
 }
 
 /**
@@ -333,7 +332,7 @@ async function generateMonthlySalaryRecords(company_id, month, year) {
     INSERT INTO employee_salaries (company_id, firebase_uid, period_month, period_year, amount_due, status)
     SELECT ?, firebase_uid, ?, ?, salary, 'pending'
     FROM employees
-    WHERE company_id = ? AND employee_type IN (0, 1) AND salary IS NOT NULL AND salary > 0
+    WHERE company_id = ? AND employee_type IN (1, 2) AND salary IS NOT NULL AND salary > 0
     ON DUPLICATE KEY UPDATE amount_due = VALUES(amount_due);
   `;
   const [result] = await pool.execute(query, [company_id, month, year, company_id]);
@@ -350,6 +349,7 @@ async function fetchSalaryHistoryForEmployee(uid, company_id) {
     ORDER BY period_year DESC, period_month DESC`,
     [uid, company_id]
   );
+  console.log(rows);
   return rows;
 }
 
@@ -385,18 +385,8 @@ async function fetchFreelancerSummaries(company_id) {
         COALESCE((SELECT SUM(fb.fee) FROM freelancer_billings fb WHERE fb.freelancer_uid = e.firebase_uid AND fb.company_id = ?), 0) as total_billed,
         COALESCE((SELECT SUM(fp.payment_amount) FROM freelancer_payments fp WHERE fp.freelancer_uid = e.firebase_uid), 0) as total_paid,
         (
-            -- This subquery for shoots is correct, as it has a unique 'id'
             (SELECT COUNT(sa.id) FROM shoot_assignments sa WHERE sa.employee_firebase_uid = e.firebase_uid AND NOT EXISTS (SELECT 1 FROM freelancer_billings fb WHERE fb.assignment_id = sa.id AND fb.assignment_type = 'shoot')) +
-            
-            -- CORRECTED SUBQUERY FOR TASKS --
-            -- We count task_id and check for existence using a composite key (task_id + freelancer_uid)
-            (SELECT COUNT(ta.task_id) FROM task_assignees ta 
-             WHERE ta.employee_firebase_uid = e.firebase_uid 
-             AND NOT EXISTS (
-                SELECT 1 FROM freelancer_billings fb 
-                WHERE fb.assignment_type = 'task'
-                AND fb.assignment_id_composite = CONCAT(ta.task_id, '-', ta.employee_firebase_uid)
-             ))
+            (SELECT COUNT(ta.task_id) FROM task_assignees ta WHERE ta.employee_firebase_uid = e.firebase_uid AND NOT EXISTS (SELECT 1 FROM freelancer_billings fb WHERE fb.assignment_type = 'task' AND fb.assignment_id_composite = CONCAT(ta.task_id, '-', ta.employee_firebase_uid)))
         ) as unbilled_assignments_count
     FROM employees e
     LEFT JOIN employee_role_assignments r ON e.firebase_uid = r.firebase_uid
@@ -405,11 +395,26 @@ async function fetchFreelancerSummaries(company_id) {
     GROUP BY e.firebase_uid`;
 
   const [freelancers] = await pool.execute(query, [company_id, company_id]);
-  return freelancers.map(f => ({
-      ...f,
-      roles: f.roles && f.roles[0] !== null ? f.roles : [],
-      remaining_balance: (parseFloat(f.total_billed) - parseFloat(f.total_paid)).toFixed(2)
-  }));
+  return freelancers.map(f => {
+      let roles = [];
+      try {
+          if (f.roles && typeof f.roles === 'string' && f.roles.trim() !== '' && f.roles !== '[null]') {
+            const parsedRoles = JSON.parse(f.roles);
+             if(Array.isArray(parsedRoles) && parsedRoles[0] !== null) {
+                roles = parsedRoles;
+            }
+          } else if (Array.isArray(f.roles) && f.roles[0] !== null) {
+              roles = f.roles;
+          }
+      } catch(e) {
+          console.error("Failed to parse freelancer roles JSON:", f.roles);
+      }
+      return {
+          ...f,
+          roles,
+          remaining_balance: (parseFloat(f.total_billed) - parseFloat(f.total_paid)).toFixed(2)
+      };
+  });
 }
 
 async function fetchUnbilledAssignmentsForFreelancer(freelancer_uid) {

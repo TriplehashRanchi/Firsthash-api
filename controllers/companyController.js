@@ -2,6 +2,7 @@ const {
     getCompanyByOwnerUid,
     updateCompanyByOwnerUid,
     deleteCompanyByOwnerUid,
+    getCompanyById,   
 } = require("../models/companyModel");
 
 // This function can remain as is for public viewing.
@@ -91,8 +92,27 @@ const deleteCompany = async (req, res) => {
     }
 }
 
+// ✅ NEW: get company by its ID (works for employees)
+const getCompanyByIdController = async (req, res) => {
+  try {
+    const { company_id } = req.params;
+    if (!company_id) {
+      return res.status(400).json({ error: 'company_id is required' });
+    }
+    const company = await getCompanyById(company_id);
+    if (!company) {
+      return res.status(404).json({ error: 'Company not found' });
+    }
+    return res.status(200).json(company);
+  } catch (err) {
+    console.error('getCompanyByIdController error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 module.exports = { 
     getCompanyByUid, 
     updateCompany,
-    deleteCompany
+    deleteCompany,
+    getCompanyByIdController
 };
