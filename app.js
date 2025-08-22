@@ -74,5 +74,27 @@ app.use('/api/uploads', uploadRoutes);
 app.use('/api/admins', adminRoutes);
 
 
+const cron = require('node-cron');
+const { ensureAbsentMarked } = require('./models/memberModel');
+const pool = require('./config/db'); // make sure you can run queries
+
+// Run every day at 00:05 server time
+cron.schedule('5 0 * * *', async () => {
+  try {
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const [companies] = await pool.execute(`SELECT id FROM companies`);
+
+    for (const c of companies) {
+      await ensureAbsentMarked(c.id, today);
+    }
+
+    console.log(`✅ Absents auto-marked for ${today}`);
+  } catch (err) {
+    console.error('❌ Cron job failed:', err);
+  }
+});
+
+
+
 
 module.exports = app;

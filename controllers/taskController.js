@@ -28,27 +28,27 @@ exports.getTasks = async (req, res) => {
  */
 exports.createTask = async (req, res) => {
     try {
-        // Get company_id from the authenticated user (provided by 'protect' middleware)
         const company_id = req.company.id;
-        // Combine request body with the company_id for the model
-        const taskData = { ...req.body, company_id };
+        
+        // Use camelCase `assigneeIds` to be consistent with the update route
+        const { assigneeIds, ...restOfBody } = req.body;
 
-        // Basic validation: A task must have a title
+        const taskData = { ...restOfBody, company_id, assigneeIds };
+
         if (!taskData.title || taskData.title.trim() === '') {
             return res.status(400).json({ error: 'Task title is required.' });
         }
 
-        // Call the model function to create the task in the database
         const newTask = await taskModel.createTask(taskData);
 
-        // Send the newly created task object back to the frontend with a 201 Created status
         res.status(201).json(newTask);
-
     } catch (err) {
         console.error('❌ Failed to create task:', err);
-        res.status(500).json({ error: 'Server error while creating task.' });
+        // Pass the specific database error message to the frontend for better debugging
+        res.status(500).json({ error: err.sqlMessage || 'Server error while creating task.' });
     }
 };
+
 
 /**
  * @desc    Update an existing task's details (title, status, etc.)

@@ -4,17 +4,75 @@ const { v4: uuidv4 } = require('uuid');
 
 // Create Task (Now accepts more fields)
 exports.createTask = async (taskData) => {
-    const { company_id, title, description, due_date, priority, project_id, deliverable_id, parent_task_id } = taskData;
-    const taskId = uuidv4();
+    const {
+        company_id,
+        title,
+        description,
+        due_date,
+        priority,
+        project_id,
+        deliverable_id,
+        parent_task_id,
+        assigneeIds, // Use camelCase to be consistent with the update function
+    } = taskData;
 
-    await db.query(
-        `INSERT INTO tasks (id, company_id, title, description, due_date, priority, project_id, deliverable_id, parent_task_id, status) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'to_do')`,
-        [taskId, company_id, title, description, due_date, priority || 'medium', project_id, deliverable_id, parent_task_id]
+    const taskId = uuidv4();
+    const connection = await db.getConnection(); // Get a connection from the pool for a transaction
+
+    try {
+        await connection.beginTransaction(); // Start the transaction
+
+        // Step 1: Insert the main task data into the `tasks` table (without assignees)
+        await connection.query(
+            `INSERT INTO tasks (
+                id, company_id, title, description, due_date, priority,
+                project_id, deliverable_id, parent_task_id, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'to_do')`,
+            [
+                taskId,
+                company_id,
+                title,
+                description,
+                due_date,
+                priority || 'medium',
+                project_id,
+                deliverable_id,
+                parent_task_id,
+            ]
+        );
+
+        // Step 2: If there are assignees, insert them into the `task_assignees` junction table
+        if (assigneeIds && assigneeIds.length > 0) {
+            const assigneeValues = assigneeIds.map((uid) => [taskId, uid]);
+            await connection.query('INSERT INTO task_assignees (task_id, employee_firebase_uid) VALUES ?', [assigneeValues]);
+        }
+
+        await connection.commit(); // If both queries succeed, commit the transaction
+
+    } catch (err) {
+        await connection.rollback(); // If any query fails, roll back all changes
+        throw err; // Re-throw the error to be caught by the controller
+    } finally {
+        connection.release(); // Always release the connection back to the pool
+    }
+
+    // After a successful creation, fetch the complete task data to return to the frontend
+    // This uses the same logic as your getTasksByCompany to ensure consistent data structure
+    const [[newTask]] = await db.query(
+        `SELECT 
+            t.*, 
+            GROUP_CONCAT(ta.employee_firebase_uid) AS assignee_ids
+         FROM tasks AS t
+         LEFT JOIN task_assignees AS ta ON t.id = ta.task_id
+         WHERE t.id = ?
+         GROUP BY t.id`,
+        [taskId]
     );
-    const [[newTask]] = await db.query('SELECT * FROM tasks WHERE id = ?', [taskId]);
+
     return newTask;
 };
+
+
 
 // Update Task (For title, status, due date, etc.)
 exports.updateTask = async (taskId, company_id, updateData) => {

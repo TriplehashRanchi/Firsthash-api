@@ -20,11 +20,16 @@ const getUserRole = async (req, res) => {
       });
     }
 
+    // Employee check
     const employee = await getEmployeeByUID(firebase_uid);
     if (employee) {
+      // If employee_type === 2 → return "manager"
+      const roleName = employee.employee_type === 2 ? 'manager' : 'employee';
+
       return res.status(200).json({
-        role: 'employee',
+        role: roleName,  // 👈 now could be "manager"
         company_id: employee.company_id,
+        employee_type: employee.employee_type,
       });
     }
 

@@ -1,6 +1,5 @@
 // backend/controllers/selfController.js
-const { fetchEmployeeByUid, fetchPaymentDetails, upsertPaymentDetails, } = require('../models/memberModel');
-
+const { fetchEmployeeByUid, fetchPaymentDetails, upsertPaymentDetails,fetchAttendanceForUid } = require('../models/memberModel');
 /**
  * GET /api/self/profile
  * Requires verifyToken (uses req.firebase_uid set by your middleware)
@@ -135,5 +134,51 @@ exports.updateMyPaymentDetails = async (req, res) => {
   } catch (err) {
     console.error('updateMyPaymentDetails error:', err);
     res.status(500).json({ error: 'Failed to update bank details.' });
+  }
+};
+
+
+
+exports.getMyAttendance = async (req, res) => {
+  try {
+    // The middleware provides req.firebase_uid. We use that directly.
+    const employeeUid = req.firebase_uid; 
+    
+    if (!employeeUid) {
+      // This is a safety check in case the middleware fails for some reason
+      return res.status(401).json({ error: "Authentication details not found." });
+    }
+
+    const records = await fetchAttendanceForUid(employeeUid);
+    res.json(records);
+    
+  } catch (err) {
+    console.error("getMyAttendance error:", err.stack || err);
+    res.status(500).json({ error: "Failed to load your attendance records." });
+  }
+};
+exports.getMyOwnAttendance = async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(403).json({ error: 'Authorization token is missing or invalid.' });
+    }
+
+    const idToken = authHeader.split('Bearer ')[1];
+    console.log("idToken:", idToken);
+
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const employeeUid = decodedToken.uid;
+
+    if (!employeeUid) {
+      return res.status(401).json({ error: "Could not identify user from token." });
+    }
+    
+    const records = await fetchAttendanceForUid(employeeUid);
+    res.json(records);
+
+  } catch (err) {
+    console.error("getMyOwnAttendance error:", err);
+    res.status(500).json({ error: "Failed to load your attendance records." });
   }
 };

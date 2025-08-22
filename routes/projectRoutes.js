@@ -1,15 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const projectController = require('../controllers/projectController');
-const { verifyToken, requireAdminWithActiveCompany } = require('../middleware/auth');
+const { verifyToken, requireAdminWithActiveCompany, requireAdminOrManagerWithActiveCompany } = require('../middleware/auth');
 
-router.post('/', verifyToken, requireAdminWithActiveCompany, projectController.createFullProject);
-router.get('/', verifyToken, requireAdminWithActiveCompany, projectController.getProjectsList);
-router.get('/allocations', verifyToken, requireAdminWithActiveCompany, projectController.getAllocationsData);
-router.get('/:id', verifyToken, requireAdminWithActiveCompany, projectController.getProjectById);
-router.post('/:projectId/payments', verifyToken, requireAdminWithActiveCompany, projectController.addReceivedPayment);
-router.put('/:id/status', verifyToken, requireAdminWithActiveCompany, projectController.updateProjectStatus);
+router.use(verifyToken);
 
-router.put('/:id', verifyToken, requireAdminWithActiveCompany, projectController.updateFullProject);
+router.post('/', requireAdminWithActiveCompany, projectController.createFullProject);
+router.get('/', requireAdminOrManagerWithActiveCompany, projectController.getProjectsList);
+router.get('/allocations', requireAdminOrManagerWithActiveCompany, projectController.getAllocationsData);
+router.get('/:id', requireAdminOrManagerWithActiveCompany, projectController.getProjectById);
+router.post('/:projectId/payments', requireAdminOrManagerWithActiveCompany, projectController.addReceivedPayment);
+router.put('/:id/status', requireAdminOrManagerWithActiveCompany, projectController.updateProjectStatus);
+
+router.put('/:id', requireAdminOrManagerWithActiveCompany, projectController.updateFullProject);
 
 module.exports = router;

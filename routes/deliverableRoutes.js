@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const  { getDeliverables } = require('../controllers/deliverableController');
-const { verifyToken, requireAdminWithActiveCompany } = require('../middleware/auth');
+const { verifyToken, requireAdminWithActiveCompany, requireAdminOrManagerWithActiveCompany } = require('../middleware/auth');
 
 const deliverableController = require('../controllers/deliverableController');
 
@@ -17,6 +17,6 @@ router.delete('/bundles', deliverableController.deleteBundle);
 // --- ADD THIS NEW ROUTE ---
 router.put('/bundles', deliverableController.updateBundle);
 
-router.get('/', verifyToken, requireAdminWithActiveCompany, getDeliverables);
+router.get('/', verifyToken, requireAdminOrManagerWithActiveCompany, getDeliverables);
 
 module.exports = router;

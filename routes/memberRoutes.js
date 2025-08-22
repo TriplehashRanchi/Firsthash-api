@@ -1,4 +1,3 @@
-// File: backend/routes/memberRoutes.js
 const express = require('express');
 const router = express.Router();
 const {
@@ -19,58 +18,54 @@ const {
   updateMonthlySalary,
   updateBaseSalary,
   getSalaryHistoryForEmployee,
-  paySalaryForSingleMonth,  // <-- Import new controller
-  payAllDueSalaries ,
+  paySalaryForSingleMonth,
+  payAllDueSalaries,
   getFreelancerSummaries,
   addFreelancerPayment,
   getFreelancerHistory,
   getUnbilledAssignments,
   billFreelancerAssignment,
-  
-
 } = require('../controllers/memberController');
 
-const { verifyToken, requireAdminWithActiveCompany } = require('../middleware/auth');
+const { verifyToken, requireAdminWithActiveCompany, requireAdminOrManagerWithActiveCompany } = require('../middleware/auth');
 
-// Protect *all* member routes below:
-router.use(verifyToken, requireAdminWithActiveCompany);
+// ✅ Step 1: apply verifyToken to all routes
+router.use(verifyToken);
 
-router.get('/freelancers/summaries', getFreelancerSummaries);
-router.get('/freelancers/:uid/unbilled-assignments', getUnbilledAssignments);
-router.post('/freelancers/billings', billFreelancerAssignment); // Use POST for creating a new billing record
-router.get('/freelancers/:uid/history', getFreelancerHistory);
-router.post('/freelancers/payments', addFreelancerPayment);
+// --- Freelancers (admin-only) ---
+router.get('/freelancers/summaries', requireAdminWithActiveCompany, getFreelancerSummaries);
+router.get('/freelancers/:uid/unbilled-assignments', requireAdminWithActiveCompany, getUnbilledAssignments);
+router.post('/freelancers/billings', requireAdminWithActiveCompany, billFreelancerAssignment);
+router.get('/freelancers/:uid/history', requireAdminWithActiveCompany, getFreelancerHistory);
+router.post('/freelancers/payments', requireAdminWithActiveCompany, addFreelancerPayment);
 
-// --- MEMBER SPECIFIC ROUTES ---
-// — Salaries dashboard —
-router.post('/salaries/generate', generateSalariesForMonth);
-router.get('/salaries', listMonthlySalaries);
-router.put('/salaries/:id', updateMonthlySalary);
-// — Attendance dashboard —
-router.post('/attendance',           createOrUpdateAttendance);
-router.get('/attendance',            getAllAttendance);
+// --- Salaries (admin-only) ---
+router.post('/salaries/generate', requireAdminWithActiveCompany, generateSalariesForMonth);
+router.get('/salaries', requireAdminWithActiveCompany, listMonthlySalaries);
+router.put('/salaries/:id', requireAdminWithActiveCompany, updateMonthlySalary);
+router.post('/salaries/pay-single', requireAdminWithActiveCompany, paySalaryForSingleMonth);
+router.post('/salaries/pay-all-due', requireAdminWithActiveCompany, payAllDueSalaries);
 
+// --- Attendance (admin OR manager) ---
+router.post('/attendance', requireAdminOrManagerWithActiveCompany, createOrUpdateAttendance);
+router.get('/attendance', requireAdminOrManagerWithActiveCompany, getAllAttendance);
 
-// — Member CRUD —
-router.post('/',                     createMember);
-router.get('/',                      getAllMembers);
-router.put('/:uid/salary',           updateBaseSalary);
-router.get('/:uid',                  getMemberById);
-router.put('/:uid',                  updateMember);
-router.patch('/:uid/status',         updateStatus);
-router.delete('/:uid',               deleteMember);
+// --- Members CRUD ---
+router.post('/', requireAdminWithActiveCompany, createMember); // only admins can onboard members
+router.get('/', requireAdminOrManagerWithActiveCompany, getAllMembers);
+router.put('/:uid/salary', requireAdminWithActiveCompany, updateBaseSalary);
+router.get('/:uid', requireAdminOrManagerWithActiveCompany, getMemberById);
+router.put('/:uid', requireAdminWithActiveCompany, updateMember);
+router.patch('/:uid/status', requireAdminWithActiveCompany, updateStatus);
+router.delete('/:uid', requireAdminWithActiveCompany, deleteMember);
 
-// — Per-member attendance & payments —
-router.get('/:uid/attendance',       getAttendanceForMember);
-router.get('/:uid/payment-details',  getPaymentDetails);
-router.put('/:uid/payment-details',  upsertPaymentDetails);
-router.delete('/:uid/payment-details', deletePaymentDetails);
+// --- Per-member attendance & payments ---
+router.get('/:uid/attendance', requireAdminOrManagerWithActiveCompany, getAttendanceForMember);
+router.get('/:uid/payment-details', requireAdminWithActiveCompany, getPaymentDetails);
+router.put('/:uid/payment-details', requireAdminWithActiveCompany, upsertPaymentDetails);
+router.delete('/:uid/payment-details', requireAdminWithActiveCompany, deletePaymentDetails);
 
-// NEW: Routes for handling payments from the history modal
-router.post('/salaries/pay-single', paySalaryForSingleMonth);
-router.post('/salaries/pay-all-due', payAllDueSalaries);
-
-router.get('/:uid/salaries/history', getSalaryHistoryForEmployee);
-
+// --- Salary history ---
+router.get('/:uid/salaries/history', requireAdminOrManagerWithActiveCompany, getSalaryHistoryForEmployee);
 
 module.exports = router;

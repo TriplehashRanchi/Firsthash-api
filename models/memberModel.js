@@ -248,6 +248,30 @@ async function fetchAllAttendance() {
     return rows;
 }
 
+async function ensureAbsentMarked(company_id, date) {
+  // get all active employees
+  const [members] = await pool.execute(
+    `SELECT firebase_uid FROM employees WHERE company_id = ? AND status = 'active'`,
+    [company_id]
+  );
+
+  for (const member of members) {
+    const [existing] = await pool.execute(
+      `SELECT a_id FROM attendance WHERE firebase_uid = ? AND a_date = ?`,
+      [member.firebase_uid, date]
+    );
+
+    if (existing.length === 0) {
+      await pool.execute(
+        `INSERT INTO attendance (firebase_uid, a_date, a_status)
+         VALUES (?, ?, ?)`,
+        [member.firebase_uid, date, 0] // 0 = Absent
+      );
+    }
+  }
+}
+
+
 async function removeRoleAssignments(firebase_uid) {
   await pool.execute(
     `DELETE FROM employee_role_assignments WHERE firebase_uid = ?`,
@@ -513,5 +537,5 @@ module.exports = {
   fetchFreelancerHistory,
   billAssignment,
   fetchUnbilledAssignmentsForFreelancer,
-  
+  ensureAbsentMarked,
 };

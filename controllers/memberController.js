@@ -24,6 +24,7 @@ const {
   fetchFreelancerHistory,
   fetchUnbilledAssignmentsForFreelancer,
   billAssignment,
+  ensureAbsentMarked
   
 } = require("../models/memberModel");
 // File: backend/controllers/memberController.js
@@ -43,23 +44,21 @@ const GLOBAL_COMPANY_ID = "00000000-0000-0000-0000-000000000000";
 exports.createMember = async (req, res) => {
   try {
     const {
-      member_type, // rename here
-      role_ids,
+      member_type,    // 0 = freelancer, 1 = in-house, 2 = manager
+      role_ids = [],
       full_name,
       mobile_no,
       email,
       password,
       confirm_password,
-      company_id// match the front-end
+      company_id
     } = req.body;
 
     console.log("👤 New member signup:", req.body);
 
-    // — Validate only these fields —
+    // Basic validations
     if (
       member_type == null ||
-      !Array.isArray(role_ids) ||
-      role_ids.length === 0 ||
       !full_name ||
       !mobile_no ||
       !email ||
@@ -68,8 +67,14 @@ exports.createMember = async (req, res) => {
     ) {
       return res.status(400).json({ error: "All signup fields are required." });
     }
+
     if (password !== confirm_password) {
       return res.status(400).json({ error: "Passwords must match." });
+    }
+
+    // Special rule: if not manager, must provide role_ids
+    if (parseInt(member_type) !== 2 && (!Array.isArray(role_ids) || role_ids.length === 0)) {
+      return res.status(400).json({ error: "At least one role must be assigned for non-manager members." });
     }
 
     // 1️⃣ Create Firebase user
@@ -80,30 +85,30 @@ exports.createMember = async (req, res) => {
       phoneNumber: mobile_no.startsWith("+") ? mobile_no : `+91${mobile_no}`,
     });
 
-    // 2️⃣ Set your custom claims
+    // 2️⃣ Set custom claims
     await admin.auth().setCustomUserClaims(userRecord.uid, {
       roleId: member_type,
       companyId: company_id,
     });
 
-    console.log(company_id)
-
-    // 3️⃣ Persist core employee
+    // 3️⃣ Save in DB
     const employee = await createEmployee({
       firebase_uid: userRecord.uid,
       employee_type: member_type,
       email,
       name: full_name,
       phone: mobile_no,
-      company_id: company_id,
+      company_id,
     });
 
-    // 4️⃣ Batch‐assign all specific roles
-    for (const rid of role_ids) {
-      await assignRole({ firebase_uid: userRecord.uid, role_id: rid });
+    // 4️⃣ Assign roles only if not a manager
+    if (parseInt(member_type) !== 2 && role_ids.length > 0) {
+      for (const rid of role_ids) {
+        await assignRole({ firebase_uid: userRecord.uid, role_id: rid });
+      }
     }
 
-    // 5️⃣ (Optional) send welcome WhatsApp
+    // 5️⃣ Send WhatsApp notification
     sendWhatsAppsAccountActivated({
       name: full_name,
       company_name: company_id,
@@ -119,6 +124,7 @@ exports.createMember = async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 };
+
 
 // Get all members
 exports.getAllMembers = async (req, res) => {
@@ -211,7 +217,11 @@ exports.deleteMember = async (req, res) => {
 exports.getAttendanceForMember = async (req, res) => {
   try {
     const { uid } = req.params;
-    // This now calls the FIXED model function
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Ensure at least today is marked
+    await ensureAbsentMarked(req.company.id, today);
+
     const records = await fetchAttendanceForUid(uid);
     res.json(records);
   } catch (err) {
@@ -219,6 +229,7 @@ exports.getAttendanceForMember = async (req, res) => {
     res.status(500).json({ error: "Failed to load attendance" });
   }
 };
+
 
 exports.createOrUpdateAttendance = async (req, res) => {
     try {
@@ -244,7 +255,6 @@ exports.getAllAttendance = async (req, res) => {
         res.status(500).json({ error: "Failed to load attendance records." });
     }
 };
-
 
 // Payment details
 exports.getPaymentDetails = async (req, res) => {
@@ -456,7 +466,10 @@ exports.getUnbilledAssignments = async (req, res) => {
         const { uid } = req.params;
         const assignments = await fetchUnbilledAssignmentsForFreelancer(uid);
         res.json(assignments);
-    } catch (err) { /* ... error handling ... */ }
+    } catch (err) { 
+        console.error('getUnbilledAssignments error:', err);
+        res.status(500).json({ error: 'Failed to load unbilled assignments.' });
+     }
 };
 
 exports.billFreelancerAssignment = async (req, res) => {
@@ -470,7 +483,10 @@ exports.billFreelancerAssignment = async (req, res) => {
         // The model expects a simple integer ID. We get this from the body.
         await billAssignment({ freelancer_uid, assignment_type, assignment_id, fee, company_id });
         res.status(201).json({ message: 'Assignment has been billed successfully.' });
-    }catch (err) { /* ... error handling ... */ }
+    }catch (err) { 
+        console.error('billFreelancerAssignment error:', err);
+        res.status(500).json({ error: 'Failed to bill assignment.' });
+     }
 };
 
 exports.getFreelancerHistory = async (req, res) => {
@@ -478,5 +494,8 @@ exports.getFreelancerHistory = async (req, res) => {
         const { uid } = req.params;
         const history = await fetchFreelancerHistory(uid);
         res.json(history);
-    } catch (err) { /* ... error handling ... */ }
+    } catch (err) { 
+        console.error('getFreelancerHistory error:', err);
+        res.status(500).json({ error: 'Failed to load freelancer history.' });
+     }
 };
