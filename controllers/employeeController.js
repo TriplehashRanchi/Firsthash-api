@@ -101,3 +101,47 @@ exports.getMyExpenses = async (req, res) => {
         res.status(500).json({ error: 'Failed to load expenses.' });
     }
 };
+
+
+// ✅ ADD THIS NEW CONTROLLER FUNCTION
+exports.updateMyTaskStatus = async (req, res) => {
+  try {
+    const company_id = req.company?.id;
+    const uid = req.user?.firebase_uid;
+    const taskId = req.params.id;
+    const { status } = req.body; // The status text, e.g., "In Progress" or "Memory card corrupt"
+
+    if (!company_id || !uid) {
+      return res.status(403).json({ error: 'Authentication context missing.' });
+    }
+    if (!taskId || !status || status.trim() === '') {
+      return res.status(400).json({ error: 'Task ID and a non-empty status are required.' });
+    }
+
+    const updated = await model.updateTaskStatusAsEmployee(company_id, uid, taskId, status);
+
+    if (updated) {
+      res.json({ success: true, message: 'Task status updated.' });
+    } else {
+      res.status(403).json({ error: 'Permission denied or task not found.' });
+    }
+  } catch (err) {
+    console.error('❌ updateMyTaskStatus error:', err);
+    return res.status(500).json({ error: 'Server error while updating task status.' });
+  }
+};
+
+// ✅ ADD THIS NEW CONTROLLER FUNCTION
+exports.getCustomTaskStatuses = async (req, res) => {
+    try {
+        const company_id = req.company?.id;
+        if (!company_id) {
+            return res.status(403).json({ error: 'Authentication context missing.' });
+        }
+        const statuses = await model.getCustomTaskStatuses(company_id);
+        res.json(statuses);
+    } catch (err) {
+        console.error('❌ getCustomTaskStatuses error:', err);
+        return res.status(500).json({ error: 'Server error while fetching statuses.' });
+    }
+};

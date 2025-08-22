@@ -4,6 +4,37 @@ const db = require('../config/db');
 /**
  * All tasks assigned to the given employee (with project name).
  */
+// exports.getTasksAssignedToUser = async (companyId, firebaseUid) => {
+//   const sql = `
+//     SELECT 
+//       t.id,
+//       t.title,
+//       t.description,
+//       t.status,
+//       t.priority,
+//       t.due_date,
+//       t.project_id,
+//       t.deliverable_id,
+//       p.name AS project_name,
+//       GROUP_CONCAT(DISTINCT ta.employee_firebase_uid) AS assignee_ids
+//     FROM tasks t
+//     INNER JOIN task_assignees ta ON t.id = ta.task_id
+//     LEFT JOIN projects p ON p.id = t.project_id
+//     WHERE t.company_id = ?
+//       AND EXISTS (
+//         SELECT 1 
+//         FROM task_assignees x 
+//         WHERE x.task_id = t.id 
+//           AND x.employee_firebase_uid = ?
+//       )
+//     GROUP BY t.id
+//     ORDER BY t.created_at DESC
+//   `;
+//   const [rows] = await db.query(sql, [companyId, firebaseUid]);
+//   return rows;
+// };
+
+// ✅ MODIFY the getTasksAssignedToUser function to include the voice_note_url
 exports.getTasksAssignedToUser = async (companyId, firebaseUid) => {
   const sql = `
     SELECT 
@@ -16,17 +47,11 @@ exports.getTasksAssignedToUser = async (companyId, firebaseUid) => {
       t.project_id,
       t.deliverable_id,
       p.name AS project_name,
-      GROUP_CONCAT(DISTINCT ta.employee_firebase_uid) AS assignee_ids
+      t.voice_note_url  -- This line is added
     FROM tasks t
     INNER JOIN task_assignees ta ON t.id = ta.task_id
     LEFT JOIN projects p ON p.id = t.project_id
-    WHERE t.company_id = ?
-      AND EXISTS (
-        SELECT 1 
-        FROM task_assignees x 
-        WHERE x.task_id = t.id 
-          AND x.employee_firebase_uid = ?
-      )
+    WHERE t.company_id = ? AND ta.employee_firebase_uid = ?
     GROUP BY t.id
     ORDER BY t.created_at DESC
   `;
@@ -253,4 +278,63 @@ exports.fetchExpenses = async (companyId, firebaseUid) => {
     const params = [companyId, companyId, firebaseUid, companyId, firebaseUid];
     const [rows] = await db.query(sql, params);
     return rows;
+};
+
+// ✅ ADD THIS NEW MODEL FUNCTION
+exports.updateTaskStatusAsEmployee = async (companyId, firebaseUid, taskId, newStatus) => {
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // Step 1: Security Check - Does this employee have rights to this task?
+    const [taskRows] = await connection.query(
+      `SELECT 1 FROM task_assignees WHERE task_id = ? AND employee_firebase_uid = ?`,
+      [taskId, firebaseUid]
+    );
+
+    if (taskRows.length === 0) {
+      throw new Error('Permission denied.'); // This will cause a rollback
+    }
+
+    // Step 2: Log this update in the new history table
+    await connection.query(
+      `INSERT INTO task_status_history (task_id, employee_firebase_uid, status_text) VALUES (?, ?, ?)`,
+      [taskId, firebaseUid, newStatus]
+    );
+
+    // Step 3: Update the main `status` column in the `tasks` table
+    await connection.query(
+      `UPDATE tasks SET status = ? WHERE id = ? AND company_id = ?`,
+      [newStatus, taskId, companyId]
+    );
+
+    // Step 4: If this is a custom status, add it to the reusable list (ignores duplicates)
+    const predefined = ['to_do', 'in_progress', 'completed', 'rejected', 'finalize'];
+    if (!predefined.includes(newStatus.toLowerCase().replace(' ', '_'))) {
+        await connection.query(
+            `INSERT IGNORE INTO custom_task_statuses (company_id, status_text) VALUES (?, ?)`,
+            [companyId, newStatus]
+        );
+    }
+    
+    await connection.commit();
+    return true; // Success
+
+  } catch (err) {
+    await connection.rollback();
+    console.error("Transaction failed in updateTaskStatusAsEmployee:", err);
+    return false; // Failure
+  } finally {
+    connection.release();
+  }
+};
+
+// ✅ ADD THIS NEW MODEL FUNCTION
+exports.getCustomTaskStatuses = async (companyId) => {
+    const [rows] = await db.query(
+        `SELECT status_text FROM custom_task_statuses WHERE company_id = ? ORDER BY created_at ASC`,
+        [companyId]
+    );
+    // Return an array of strings
+    return rows.map(r => r.status_text);
 };
