@@ -61,10 +61,19 @@ const updateClient = async (client_id, updatedData) => {
 };
 
 // 5. Delete a client
-const deleteClient = async (client_id) => {
+// const deleteClient = async (client_id) => {
+//   const [result] = await db.query(
+//     'DELETE FROM clients WHERE client_id = ?',
+//     [client_id]
+//   );
+//   return result.affectedRows > 0;
+// };
+
+
+const deleteClient = async (id) => {
   const [result] = await db.query(
-    'DELETE FROM clients WHERE client_id = ?',
-    [client_id]
+    'DELETE FROM clients WHERE id = ?',
+    [id]
   );
   return result.affectedRows > 0;
 };
@@ -79,11 +88,111 @@ const getClientByPhone = async (phone, company_id) => {
 };
 
 
+// --- NEW: get all projects for a specific client (scoped by company) ---
+const getClientsWithProjects = async (company_id) => {
+  // This query is compatible with older MySQL and MariaDB versions.
+  // It uses GROUP_CONCAT to build a string of JSON objects and then wraps it in brackets.
+  const [clients] = await db.query(
+    `
+    SELECT
+      c.id,
+      c.name,
+      c.email,
+      c.phone,
+      -- This COALESCE handles clients with no projects, returning a clean '[]'.
+      COALESCE(
+        CONCAT('[',
+          GROUP_CONCAT(
+            -- We only create a JSON object if there is a project.
+            CASE
+              WHEN p.id IS NOT NULL THEN
+                JSON_OBJECT(
+                  'projectId', p.id,
+                  'name', p.name,
+                  'event', p.status,
+                  'date', (SELECT MIN(s.date) FROM shoots s WHERE s.project_id = p.id)
+                )
+              ELSE NULL
+            END
+          ),
+        ']'),
+        '[]'
+      ) AS projects
+    FROM
+      clients AS c
+    LEFT JOIN
+      projects AS p ON c.id = p.client_id
+    WHERE
+      c.company_id = ?
+    GROUP BY
+      c.id
+    ORDER BY
+      c.name ASC;
+    `,
+    [company_id]
+  );
+
+  // Split the full 'name' into 'firstName' and 'lastName' and parse the projects JSON string.
+  return clients.map(client => ({
+    ...client,
+    firstName: client.name ? client.name.split(' ')[0] : '',
+    lastName: client.name ? client.name.split(' ').slice(1).join(' ') : '',
+    projects: JSON.parse(client.projects), // The query returns a string, so we parse it into an array
+  }));
+};
+
+const updateClientFromDetailsPage = async (id, clientData) => {
+  // This function is designed to work ONLY with the data from your new frontend page.
+  
+  // 1. Safely get the data from the form
+  const { firstName, lastName, email, phone } = clientData;
+
+  // 2. Combine firstName and lastName into the 'name' field the database needs
+  const name = `${firstName || ''} ${lastName || ''}`.trim();
+
+  // 3. The SQL query uses the correct column name 'id' in the WHERE clause.
+  //    It only updates the specific fields from this form.
+  const [result] = await db.query(
+    `UPDATE clients SET name = ?, email = ?, phone = ? WHERE id = ?`,
+    [name, email, phone, id]
+  );
+
+  return result.affectedRows > 0;
+};
+
+const updateClientFromManagerPage = async (id, clientData) => {
+  // This function is built specifically for the form on your manager's page.
+  
+  // 1. Prepare the data: combine firstName and lastName into the 'name' field
+  const dataToUpdate = {
+    name: `${clientData.firstName || ''} ${clientData.lastName || ''}`.trim(),
+    email: clientData.email,
+    phone: clientData.phone,
+  };
+
+  // 2. Build the SQL query parts
+  const fields = Object.keys(dataToUpdate).map(key => `${key} = ?`).join(', ');
+  const values = Object.values(dataToUpdate);
+  values.push(id); // Add the ID for the WHERE clause
+
+  // 3. The SQL query uses the correct column name 'id' in the WHERE clause.
+  const [result] = await db.query(
+    `UPDATE clients SET ${fields} WHERE id = ?`,
+    values
+  );
+
+  return result.affectedRows > 0;
+};
+
+
 module.exports = {
   getClientsByCompany,
   getClientById,
   createClient,
   updateClient,
   deleteClient,
-  getClientByPhone
+  getClientByPhone,
+  getClientsWithProjects,
+  updateClientFromDetailsPage,
+  updateClientFromManagerPage
 };

@@ -4,6 +4,10 @@ const express = require('express');
 const router = express.Router();
 const clientController = require('../controllers/clientController');
 
+// Get all projects for a specific client (scoped to company)
+router.get('/with-projects', clientController.getClientsWithProjects);
+
+
 // 📥 Get all clients for a company
 // GET /api/clients?company_id=xxx
 router.get('/', clientController.getClientsByCompany);
@@ -11,6 +15,11 @@ router.get('/', clientController.getClientsByCompany);
 // 🔍 Search client by phone number
 // GET /api/clients/search?phone=xxx&company_id=xxx
 router.get('/search', clientController.searchClientByPhone);
+
+// --- ⬇️ ADD THIS NEW, SEPARATE ROUTE FOR THE CLIENTS PAGE UPDATE ⬇️ ---
+router.put('/details/:id', clientController.updateClientFromDetailsPage);
+router.put('/from-manager/:id', clientController.updateClientFromManagerPage);
+
 
 // 📄 Get a single client by ID
 // GET /api/clients/:id

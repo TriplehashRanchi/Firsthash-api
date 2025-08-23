@@ -83,6 +83,60 @@ const deleteClient = async (req, res) => {
   }
 };
 
+const getClientsWithProjects = async (req, res) => {
+  try {
+    const { company_id } = req.query;
+    if (!company_id) {
+      return res.status(400).json({ error: 'Missing company_id' });
+    }
+    const clients = await clientModel.getClientsWithProjects(company_id);
+    res.json(clients);
+  } catch (err) {
+    console.error('Error fetching clients with projects:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// --- ⬇️ ADD THIS NEW, SEPARATE CONTROLLER FOR THE CLIENTS PAGE ⬇️ ---
+const updateClientFromDetailsPage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const clientData = req.body;
+
+    const success = await clientModel.updateClientFromDetailsPage(id, clientData);
+    
+    if (!success) {
+      return res.status(404).json({ error: 'Client not found or no changes were made.' });
+    }
+    
+    res.json({ success: true, message: 'Client updated successfully.' });
+  } catch (err) {
+    console.error('Error in updateClientFromDetailsPage controller:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+const updateClientFromManagerPage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const clientData = req.body;
+
+    // Use the new, safe model function
+    const success = await clientModel.updateClientFromManagerPage(id, clientData);
+    
+    if (!success) {
+      return res.status(404).json({ error: 'Client not found or no changes were made.' });
+    }
+    
+    res.json({ success: true, message: 'Client updated successfully.' });
+  } catch (err) {
+    console.error('Error in updateClientFromManagerPage controller:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+
+
 module.exports = {
   getClientsByCompany,
   getClientById,
@@ -90,4 +144,7 @@ module.exports = {
   createClient,
   updateClient,
   deleteClient,
+  getClientsWithProjects,
+  updateClientFromDetailsPage,
+  updateClientFromManagerPage
 };

@@ -5,11 +5,16 @@ const {
     updateCompany,
     deleteCompany,
      getCompanyByIdController, 
+     getCompanyForEmployee
 } = require('../controllers/companyController');
 
 // IMPORTANT: Import your authentication middleware here.
 // I am assuming it's named 'verifyToken' from previous context.
-const { verifyToken } = require('../middleware/auth'); 
+const { verifyToken, requireManagerWithActiveCompany } = require('../middleware/auth'); 
+
+
+router.get('/for-employee/:firebase_uid', verifyToken , getCompanyForEmployee);
+
 
 // --- Public Route (Does not need authentication) ---
 // Anyone can view a company profile if they have the UID.

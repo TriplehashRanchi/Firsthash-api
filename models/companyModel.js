@@ -60,10 +60,28 @@ const deleteCompanyByOwnerUid = async (firebase_uid) => {
 };
 
 
+const getCompanyByEmployeeUid = async (employee_uid) => {
+  // This query finds the employee by their UID, then joins to the companies table
+  // to get the details of the company they belong to.
+  const [rows] = await db.query(
+    `
+    SELECT c.* 
+    FROM companies c 
+    JOIN employees e ON c.id = e.company_id 
+    WHERE e.firebase_uid = ?
+    `,
+    [employee_uid]
+  );
+  return rows[0]; // Return the first company found (should only be one)
+};
+
+
+
 module.exports = {
   createCompany,
   getCompanyByOwnerUid,
   getCompanyById,
   updateCompanyByOwnerUid, // Export the new function
   deleteCompanyByOwnerUid,
+  getCompanyByEmployeeUid
 };

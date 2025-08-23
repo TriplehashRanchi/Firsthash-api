@@ -3,6 +3,7 @@ const {
     updateCompanyByOwnerUid,
     deleteCompanyByOwnerUid,
     getCompanyById,   
+    getCompanyByEmployeeUid,
 } = require("../models/companyModel");
 
 // This function can remain as is for public viewing.
@@ -110,9 +111,23 @@ const getCompanyByIdController = async (req, res) => {
   }
 };
 
+const getCompanyForEmployee = async (req, res) => {
+    try {
+        const { firebase_uid } = req.params;
+        const company = await getCompanyByEmployeeUid(firebase_uid);
+        if (!company) {
+            return res.status(404).json({ error: 'Company not found for this employee.' });
+        }
+        res.status(200).json(company);
+    } catch (err) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
 module.exports = { 
     getCompanyByUid, 
     updateCompany,
     deleteCompany,
-    getCompanyByIdController
+    getCompanyByIdController,
+    getCompanyForEmployee
 };
