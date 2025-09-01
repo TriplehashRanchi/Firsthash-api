@@ -470,75 +470,89 @@ exports.fetchDataForAllocationCalendar = async (company_id) => {
 
 
 exports.updateFullProject = async (projectId, companyId, projectData) => {
-  const connection = await db.getConnection(); // Get a connection from the pool for the transaction
+  const connection = await db.getConnection();
+
+  // --- helper to safely parse currency/number strings ---
+  const toNumber = (v) => {
+    if (v === null || v === undefined) return 0;
+    const n = Number(String(v).replace(/[^0-9.\-]/g, ''));
+    return Number.isFinite(n) ? n : 0;
+  };
 
   try {
     await connection.beginTransaction();
 
-    // --- NEW STEP: HANDLE CLIENT UPDATE ---
+    // --- CLIENT UPDATE (unchanged) ---
     const { clients } = projectData;
     if (!clients || !clients.clientDetails || !clients.clientDetails.phone) {
-        throw new Error("Client details with a phone number are required for an update.");
+      throw new Error('Client details with a phone number are required for an update.');
     }
     const newClientDetails = clients.clientDetails;
 
-    // First, find the current client_id associated with the project
     const [[currentProject]] = await connection.query(
-        'SELECT client_id FROM projects WHERE id = ? AND company_id = ?',
-        [projectId, companyId]
+      'SELECT client_id FROM projects WHERE id = ? AND company_id = ?',
+      [projectId, companyId]
     );
+    if (!currentProject) throw new Error('Project not found or does not belong to this company.');
 
-    if (!currentProject) {
-        throw new Error("Project not found or does not belong to this company.");
-    }
-    
     const currentClientId = currentProject.client_id;
-    
-    // Then, get the phone number of that current client
     const [[currentClient]] = await connection.query(
-        'SELECT phone FROM clients WHERE id = ?',
-        [currentClientId]
+      'SELECT phone FROM clients WHERE id = ?',
+      [currentClientId]
     );
 
     let finalClientId = currentClientId;
 
-    // Compare phone numbers to decide whether to update the existing client or find/create a new one
     if (currentClient.phone !== newClientDetails.phone) {
-        // Phone number has changed, so we need to find or create a new client
-        console.log(`Phone number changed. Finding/creating new client for ${newClientDetails.phone}`);
-        finalClientId = await exports.findOrCreateClient(companyId, newClientDetails);
+      finalClientId = await exports.findOrCreateClient(companyId, newClientDetails);
     } else {
-        // Phone number is the same, so just update the details of the existing client
-        console.log(`Phone number is the same. Updating details for client ID ${currentClientId}`);
-        await connection.query(
-            `UPDATE clients SET name = ?, relation = ?, email = ? WHERE id = ? AND company_id = ?`,
-            [
-                newClientDetails.name,
-                newClientDetails.relation,
-                newClientDetails.email,
-                currentClientId,
-                companyId
-            ]
-        );
+      await connection.query(
+        `UPDATE clients SET name = ?, relation = ?, email = ? WHERE id = ? AND company_id = ?`,
+        [
+          newClientDetails.name,
+          newClientDetails.relation,
+          newClientDetails.email,
+          currentClientId,
+          companyId,
+        ]
+      );
     }
 
-    // --- STEP 1: DELETE all existing child records for this project ---
-    // The order of deletion matters if you don't have ON DELETE CASCADE.
-    // We delete from children of shoots (shoot_services) before shoots itself.
-    await connection.query('DELETE FROM shoot_services WHERE shoot_id IN (SELECT id FROM shoots WHERE project_id = ?)', [projectId]);
+    // --- DELETE children (unchanged) ---
+    await connection.query(
+      'DELETE FROM shoot_services WHERE shoot_id IN (SELECT id FROM shoots WHERE project_id = ?)',
+      [projectId]
+    );
     await connection.query('DELETE FROM shoots WHERE project_id = ?', [projectId]);
     await connection.query('DELETE FROM deliverables WHERE project_id = ?', [projectId]);
     await connection.query('DELETE FROM received_payments WHERE project_id = ?', [projectId]);
     await connection.query('DELETE FROM payment_schedules WHERE project_id = ?', [projectId]);
 
-    // --- STEP 2: UPDATE the main project record ---
+    // --- READ core fields from payload ---
     const {
       projectName,
-      projectPackageCost,
-      deliverablesAdditionalCost,
-      overallTotalCost,
+      projectPackageCost,             // may be "8446.00" (string)
+      deliverablesAdditionalCost,     // may be string OR omitted
+      // overallTotalCost,            // <-- ignore this; we recompute server-side
     } = projectData;
 
+    // --- Recompute additional_deliverables_cost from deliverables list if present ---
+    const items = projectData?.deliverables?.deliverableItems || [];
+    const addlFromItems = items.reduce((sum, it) => {
+      if (it?.isAdditionalCharge) return sum + toNumber(it.additionalChargeAmount);
+      return sum;
+    }, 0);
+
+    // prefer explicit field if sent, else derive from items
+    const pkgCost = toNumber(projectPackageCost);
+    const addlCost =
+      deliverablesAdditionalCost !== undefined && deliverablesAdditionalCost !== null
+        ? toNumber(deliverablesAdditionalCost)
+        : addlFromItems;
+
+    const totalCost = Number((pkgCost + addlCost).toFixed(2));
+
+    // --- UPDATE main project with recomputed totals ---
     await connection.query(
       `UPDATE projects SET 
          name = ?, 
@@ -549,24 +563,22 @@ exports.updateFullProject = async (projectId, companyId, projectData) => {
        WHERE id = ? AND company_id = ?`,
       [
         projectName,
-        projectPackageCost,
-        deliverablesAdditionalCost,
-        overallTotalCost,
+        pkgCost,
+        addlCost,
+        totalCost,         // ← recomputed; do NOT use client overallTotalCost
         finalClientId,
         projectId,
-        companyId, // Security check
+        companyId,
       ]
     );
 
-    // --- STEP 3: RE-INSERT all new child records using logic inspired by your create functions ---
-    
-    // Re-insert Shoots
-    if (projectData.shoots && projectData.shoots.shootList) {
+    // --- RE-INSERT Shoots ---
+    if (projectData.shoots?.shootList) {
       for (const shoot of projectData.shoots.shootList) {
         const { title, date, time, city, selectedServices = {} } = shoot;
         const [shootRes] = await connection.query(
           `INSERT INTO shoots (project_id, title, date, time, city) VALUES (?, ?, ?, ?, ?)`,
-          [projectId, title, date, time, city]
+          [projectId, title, date || null, time || null, city || null]
         );
         const shoot_id = shootRes.insertId;
         for (const serviceName in selectedServices) {
@@ -582,48 +594,52 @@ exports.updateFullProject = async (projectId, companyId, projectData) => {
       }
     }
 
-    // Re-insert Deliverables
-    if (projectData.deliverables && projectData.deliverables.deliverableItems) {
-      for (const item of projectData.deliverables.deliverableItems) {
+    // --- RE-INSERT Deliverables ---
+    if (items.length) {
+      for (const item of items) {
         await connection.query(
-          `INSERT INTO deliverables (project_id, title, is_additional_charge, additional_charge_amount, estimated_date) VALUES (?, ?, ?, ?, ?)`,
-          [projectId, item.title, item.isAdditionalCharge ? 1 : 0, item.additionalChargeAmount || 0, item.date || null]
+          `INSERT INTO deliverables (project_id, title, is_additional_charge, additional_charge_amount, estimated_date)
+           VALUES (?, ?, ?, ?, ?)`,
+          [
+            projectId,
+            item.title,
+            item.isAdditionalCharge ? 1 : 0,
+            toNumber(item.additionalChargeAmount),
+            item.date || null,
+          ]
         );
       }
     }
 
-    // Re-insert Received Amount
-    if (projectData.receivedAmount && projectData.receivedAmount.transactions) {
-      for (const transaction of projectData.receivedAmount.transactions) {
-        if (transaction) {
-          await connection.query(
-            `INSERT INTO received_payments (project_id, amount, description, date_received) VALUES (?, ?, ?, ?)`,
-            [projectId, transaction.amount || 0, transaction.description || null, transaction.date || null]
-          );
-        }
+    // --- RE-INSERT Received Payments ---
+    if (projectData.receivedAmount?.transactions) {
+      for (const tx of projectData.receivedAmount.transactions) {
+        if (!tx) continue;
+        await connection.query(
+          `INSERT INTO received_payments (project_id, amount, description, date_received)
+           VALUES (?, ?, ?, ?)`,
+          [projectId, toNumber(tx.amount), tx.description || null, tx.date || null]
+        );
       }
     }
 
-    // Re-insert Payment Schedule
-    if (projectData.paymentSchedule && projectData.paymentSchedule.paymentInstallments) {
-        for (const { dueDate, amount, description } of projectData.paymentSchedule.paymentInstallments) {
-            await connection.query(
-            `INSERT INTO payment_schedules (project_id, due_date, amount, description) VALUES (?, ?, ?, ?)`,
-            [projectId, dueDate, amount, description || null]
-            );
-        }
+    // --- RE-INSERT Payment Schedule ---
+    if (projectData.paymentSchedule?.paymentInstallments) {
+      for (const { dueDate, amount, description } of projectData.paymentSchedule.paymentInstallments) {
+        await connection.query(
+          `INSERT INTO payment_schedules (project_id, due_date, amount, description)
+           VALUES (?, ?, ?, ?)`,
+          [projectId, dueDate || null, toNumber(amount), description || null]
+        );
+      }
     }
 
-    // --- STEP 4: If everything succeeded, commit the transaction ---
     await connection.commit();
-
   } catch (err) {
-    // If any step failed, roll back all changes from this transaction
     await connection.rollback();
-    console.error("DATABASE TRANSACTION FAILED:", err);
-    throw err; // Re-throw the error so the controller can catch it and send a 500 response
+    console.error('DATABASE TRANSACTION FAILED:', err);
+    throw err;
   } finally {
-    // ALWAYS release the connection back to the pool, whether it succeeded or failed
     connection.release();
   }
 };
