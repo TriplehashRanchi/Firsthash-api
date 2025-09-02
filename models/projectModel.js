@@ -375,12 +375,14 @@ exports.getProjectDetailsById = async (projectUuid, companyId) => {
 
 
 // --- REPLACE your existing function with this FINAL, CORRECTED version ---
+// File: models/projectModel.js
+
+// ... (keep the rest of your file the same) ...
+
 exports.fetchDataForAllocationCalendar = async (company_id) => {
     // 1. We run four queries in parallel.
     
-    // Query A: Get all shoots for ongoing projects.
-    // --- THIS IS THE CRITICAL FIX --- We now use LEFT JOINs to ensure all shoots are included.
-    console.log('company_id:', company_id);
+    // Query A: Get all shoots for ongoing projects (NO CHANGE HERE)
     const shootsQuery = db.query(`
         SELECT 
             s.id, s.title, s.date, s.time, s.city,
@@ -392,7 +394,7 @@ exports.fetchDataForAllocationCalendar = async (company_id) => {
         WHERE p.company_id = ? AND p.status = 'ongoing' AND s.id IS NOT NULL
     `, [company_id]);
 
-    // Query B: Get all allocations for those shoots.
+    // Query B: Get all allocations for those shoots (NO CHANGE HERE)
     const allocationsQuery = db.query(`
         SELECT 
             ssa.shoot_id, ssa.service_name, ss.quantity, ssa.employee_firebase_uid
@@ -408,27 +410,46 @@ exports.fetchDataForAllocationCalendar = async (company_id) => {
         WHERE ss.shoot_id IN (SELECT id FROM shoots WHERE project_id IN (SELECT id FROM projects WHERE company_id = ? AND status = 'ongoing'))
     `, [company_id, company_id]);
 
-    // Query C: Get team members with their roles.
+    // --- START: MODIFICATION 1 ---
+    // Query C: Get team members AND ONLY their 'On-Production' roles.
+    // We also filter to only include members who have at least one 'On-Production' role.
     const teamMembersQuery = db.query(`
         SELECT 
-            e.firebase_uid AS id, e.name,
-            JSON_ARRAYAGG(CASE WHEN er.type_name IS NOT NULL THEN er.type_name ELSE NULL END) AS roles
+            e.firebase_uid AS id, 
+            e.name,
+            -- This now ONLY aggregates roles where role_code is 1
+            JSON_ARRAYAGG(CASE WHEN er.role_code = 1 THEN er.type_name ELSE NULL END) AS roles
         FROM employees e
         LEFT JOIN employee_role_assignments era ON e.firebase_uid = era.firebase_uid
         LEFT JOIN employee_roles er ON era.role_id = er.id
         WHERE e.company_id = ?
+        -- This ensures we only get employees who have at least ONE 'On-Production' role
+        AND EXISTS (
+            SELECT 1
+            FROM employee_role_assignments sub_era
+            JOIN employee_roles sub_er ON sub_era.role_id = sub_er.id
+            WHERE sub_era.firebase_uid = e.firebase_uid AND sub_er.role_code = 1
+        )
         GROUP BY e.firebase_uid, e.name
     `, [company_id]);
+    // --- END: MODIFICATION 1 ---
 
-    // Query D: Get a simple list of all available roles.
-    const rolesQuery = db.query(`SELECT DISTINCT type_name FROM employee_roles WHERE company_id = ? OR company_id = '00000000-0000-0000-0000-000000000000'`, [company_id]);
+    // --- START: MODIFICATION 2 ---
+    // Query D: Get a simple list of available roles that are designated as 'On-Production'.
+    const rolesQuery = db.query(
+        `SELECT DISTINCT er.type_name FROM employee_roles er 
+         WHERE (er.company_id = ? OR er.company_id = '00000000-0000-0000-0000-000000000000')
+         AND er.role_code = 1`, // The filter is added here
+        [company_id]
+    );
+    // --- END: MODIFICATION 2 ---
     
     // 2. Execute all queries at once.
     const [[shoots], [allocations], [teamMembers], [roleRows]] = await Promise.all([
         shootsQuery, allocationsQuery, teamMembersQuery, rolesQuery
     ]);
     
-    // 3. Process the data into the final structure.
+    // 3. Process the data into the final structure (NO CHANGE HERE)
     const shootsById = shoots.reduce((acc, shoot) => {
         acc[shoot.id] = {
             id: shoot.id, eventDate: shoot.date, clientName: shoot.clientName,
@@ -449,12 +470,13 @@ exports.fetchDataForAllocationCalendar = async (company_id) => {
         }
     }
     
-    // 4. Return everything in one clean object, ensuring team member roles are properly parsed.
+    // 4. Return everything in one clean object, ensuring team member roles are properly parsed. (NO CHANGE HERE)
     return {
         shoots: Object.values(shootsById),
         teamMembers: teamMembers.map(member => {
             let parsedRoles = [];
             try {
+                // This will correctly filter out the NULLs we introduced in the SQL query
                 const rolesFromString = JSON.parse(member.roles);
                 if (Array.isArray(rolesFromString)) {
                     parsedRoles = rolesFromString.filter(role => role !== null);
@@ -467,7 +489,6 @@ exports.fetchDataForAllocationCalendar = async (company_id) => {
         roles: roleRows.map(r => r.type_name)
     };
 };
-
 
 exports.updateFullProject = async (projectId, companyId, projectData) => {
   const connection = await db.getConnection();
@@ -643,3 +664,164 @@ exports.updateFullProject = async (projectId, companyId, projectData) => {
     connection.release();
   }
 };
+
+
+
+// exports.updateFullProject = async (projectId, companyId, projectData) => {
+//   const connection = await db.getConnection(); // Get a connection from the pool for the transaction
+
+//   try {
+//     await connection.beginTransaction();
+
+//     // --- NEW STEP: HANDLE CLIENT UPDATE ---
+//     const { clients } = projectData;
+//     if (!clients || !clients.clientDetails || !clients.clientDetails.phone) {
+//         throw new Error("Client details with a phone number are required for an update.");
+//     }
+//     const newClientDetails = clients.clientDetails;
+
+//     // First, find the current client_id associated with the project
+//     const [[currentProject]] = await connection.query(
+//         'SELECT client_id FROM projects WHERE id = ? AND company_id = ?',
+//         [projectId, companyId]
+//     );
+
+//     if (!currentProject) {
+//         throw new Error("Project not found or does not belong to this company.");
+//     }
+    
+//     const currentClientId = currentProject.client_id;
+    
+//     // Then, get the phone number of that current client
+//     const [[currentClient]] = await connection.query(
+//         'SELECT phone FROM clients WHERE id = ?',
+//         [currentClientId]
+//     );
+
+//     let finalClientId = currentClientId;
+
+//     // Compare phone numbers to decide whether to update the existing client or find/create a new one
+//     if (currentClient.phone !== newClientDetails.phone) {
+//         // Phone number has changed, so we need to find or create a new client
+//         console.log(`Phone number changed. Finding/creating new client for ${newClientDetails.phone}`);
+//         finalClientId = await exports.findOrCreateClient(companyId, newClientDetails);
+//     } else {
+//         // Phone number is the same, so just update the details of the existing client
+//         console.log(`Phone number is the same. Updating details for client ID ${currentClientId}`);
+//         await connection.query(
+//             `UPDATE clients SET name = ?, relation = ?, email = ? WHERE id = ? AND company_id = ?`,
+//             [
+//                 newClientDetails.name,
+//                 newClientDetails.relation,
+//                 newClientDetails.email,
+//                 currentClientId,
+//                 companyId
+//             ]
+//         );
+//     }
+
+//     // --- STEP 1: DELETE all existing child records for this project ---
+//     // The order of deletion matters if you don't have ON DELETE CASCADE.
+//     // We delete from children of shoots (shoot_services) before shoots itself.
+//     await connection.query('DELETE FROM shoot_services WHERE shoot_id IN (SELECT id FROM shoots WHERE project_id = ?)', [projectId]);
+//     await connection.query('DELETE FROM shoots WHERE project_id = ?', [projectId]);
+//     await connection.query('DELETE FROM deliverables WHERE project_id = ?', [projectId]);
+//     await connection.query('DELETE FROM received_payments WHERE project_id = ?', [projectId]);
+//     await connection.query('DELETE FROM payment_schedules WHERE project_id = ?', [projectId]);
+
+//     // --- STEP 2: UPDATE the main project record ---
+//     const {
+//       projectName,
+//       projectPackageCost,
+//       deliverablesAdditionalCost,
+//       overallTotalCost,
+//     } = projectData;
+
+//     await connection.query(
+//       `UPDATE projects SET 
+//          name = ?, 
+//          package_cost = ?, 
+//          additional_deliverables_cost = ?, 
+//          total_cost = ?,
+//          client_id = ?
+//        WHERE id = ? AND company_id = ?`,
+//       [
+//         projectName,
+//         projectPackageCost,
+//         deliverablesAdditionalCost,
+//         overallTotalCost,
+//         finalClientId,
+//         projectId,
+//         companyId, // Security check
+//       ]
+//     );
+
+//     // --- STEP 3: RE-INSERT all new child records using logic inspired by your create functions ---
+    
+//     // Re-insert Shoots
+//     if (projectData.shoots && projectData.shoots.shootList) {
+//       for (const shoot of projectData.shoots.shootList) {
+//         const { title, date, time, city, selectedServices = {} } = shoot;
+//         const [shootRes] = await connection.query(
+//           `INSERT INTO shoots (project_id, title, date, time, city) VALUES (?, ?, ?, ?, ?)`,
+//           [projectId, title, date, time, city]
+//         );
+//         const shoot_id = shootRes.insertId;
+//         for (const serviceName in selectedServices) {
+//           const quantity = selectedServices[serviceName] || 1;
+//           const service_id = await getServiceIdByName(serviceName, companyId);
+//           if (service_id) {
+//             await connection.query(
+//               `INSERT INTO shoot_services (shoot_id, service_id, quantity) VALUES (?, ?, ?)`,
+//               [shoot_id, service_id, quantity]
+//             );
+//           }
+//         }
+//       }
+//     }
+
+//     // Re-insert Deliverables
+//     if (projectData.deliverables && projectData.deliverables.deliverableItems) {
+//       for (const item of projectData.deliverables.deliverableItems) {
+//         await connection.query(
+//           `INSERT INTO deliverables (project_id, title, is_additional_charge, additional_charge_amount, estimated_date) VALUES (?, ?, ?, ?, ?)`,
+//           [projectId, item.title, item.isAdditionalCharge ? 1 : 0, item.additionalChargeAmount || 0, item.date || null]
+//         );
+//       }
+//     }
+
+//     // Re-insert Received Amount
+//     if (projectData.receivedAmount && projectData.receivedAmount.transactions) {
+//       for (const transaction of projectData.receivedAmount.transactions) {
+//         if (transaction) {
+//           await connection.query(
+//             `INSERT INTO received_payments (project_id, amount, description, date_received) VALUES (?, ?, ?, ?)`,
+//             [projectId, transaction.amount || 0, transaction.description || null, transaction.date || null]
+//           );
+//         }
+//       }
+//     }
+
+//     // Re-insert Payment Schedule
+//     if (projectData.paymentSchedule && projectData.paymentSchedule.paymentInstallments) {
+//         for (const { dueDate, amount, description } of projectData.paymentSchedule.paymentInstallments) {
+//             await connection.query(
+//             `INSERT INTO payment_schedules (project_id, due_date, amount, description) VALUES (?, ?, ?, ?)`,
+//             [projectId, dueDate, amount, description || null]
+//             );
+//         }
+//     }
+
+//     // --- STEP 4: If everything succeeded, commit the transaction ---
+//     await connection.commit();
+
+//   } catch (err) {
+//     // If any step failed, roll back all changes from this transaction
+//     await connection.rollback();
+//     console.error("DATABASE TRANSACTION FAILED:", err);
+//     throw err; // Re-throw the error so the controller can catch it and send a 500 response
+//   } finally {
+//     // ALWAYS release the connection back to the pool, whether it succeeded or failed
+//     connection.release();
+//   }
+// };
