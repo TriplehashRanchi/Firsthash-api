@@ -666,6 +666,23 @@ exports.updateFullProject = async (projectId, companyId, projectData) => {
 };
 
 
+exports.updateShootCity = async (shootId, companyId, city) => {
+  const [[row]] = await db.query(
+    `SELECT s.id
+       FROM shoots s
+       JOIN projects p ON p.id = s.project_id
+      WHERE s.id = ? AND p.company_id = ?`,
+    [shootId, companyId]
+  );
+
+  if (!row) throw new Error('Shoot not found or not in this company');
+
+  await db.query(`UPDATE shoots SET city = ? WHERE id = ?`, [city || null, shootId]);
+
+  return { message: 'City updated successfully' };
+};
+
+
 
 // exports.updateFullProject = async (projectId, companyId, projectData) => {
 //   const connection = await db.getConnection(); // Get a connection from the pool for the transaction

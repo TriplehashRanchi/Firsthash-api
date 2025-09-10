@@ -5,7 +5,10 @@ const { createCompany, getCompanyByOwnerUid } = require('../models/companyModel'
 const { getAdminByUID, getEmployeeByUID } = require('../models/userModel');
 
 const getUserRole = async (req, res) => {
+  console.log('getUserRole called');
   const { firebase_uid } = req.params;
+
+  console.log('Firebase UID:', firebase_uid);
 
   if (!firebase_uid) {
     return res.status(400).json({ error: 'Missing UID' });
