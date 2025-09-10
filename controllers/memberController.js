@@ -48,6 +48,7 @@ exports.createMember = async (req, res) => {
       role_ids = [],
       full_name,
       mobile_no,
+      alternate_phone,
       email,
       password,
       confirm_password,
@@ -98,6 +99,7 @@ exports.createMember = async (req, res) => {
       email,
       name: full_name,
       phone: mobile_no,
+      alternate_phone: alternate_phone || null,
       company_id,
     });
 
@@ -159,6 +161,7 @@ exports.updateMember = async (req, res) => {
       full_name,
       email,
       phone,
+      alternate_phone,
       employee_type,
       role_id,
       address = null,
@@ -170,6 +173,7 @@ exports.updateMember = async (req, res) => {
       name: full_name,
       email,
       phone,
+      alternate_phone: alternate_phone || null,
       employee_type,
       address,
       salary: employee_type === 1 ? salary : null,

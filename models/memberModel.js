@@ -10,18 +10,19 @@ async function createEmployee({
   email,
   name,
   phone,
+  alternate_phone = null,
   company_id,
 }) {
   await pool.execute(
     `INSERT INTO employees
-      (firebase_uid, employee_type, email, name, phone, company_id, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [firebase_uid, employee_type, email, name, phone, company_id, 'active'] // <-- fixed
+      (firebase_uid, employee_type, email, name, phone, alternate_phone, company_id, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [firebase_uid, employee_type, email, name, phone, alternate_phone, company_id, 'active'] // <-- fixed
   );
 
   const [[row]] = await pool.execute(
     `SELECT
-       firebase_uid, email, name, phone, company_id, employee_type, status, created_at, updated_at
+       firebase_uid, email, name, phone, alternate_phone, company_id, employee_type, status, created_at, updated_at
      FROM employees
      WHERE firebase_uid = ?`,
     [firebase_uid]
@@ -105,7 +106,7 @@ async function fetchAllEmployees(company_id) {
   const [rows] = await pool.execute(
     `
     SELECT
-       e.firebase_uid, e.name, e.email, e.phone, e.employee_type, e.status, e.address, e.salary,
+       e.firebase_uid, e.name, e.email, e.phone, e.alternate_phone, e.employee_type, e.status, e.address, e.salary,
        JSON_ARRAYAGG(
          CASE WHEN r.role_id IS NOT NULL THEN JSON_OBJECT('role_id', r.role_id, 'role_name', er.type_name) ELSE NULL END
        ) AS roles
@@ -146,6 +147,7 @@ async function fetchEmployeeByUid(uid) {
        e.name,
        e.email,
        e.phone,
+       e.alternate_phone,
        e.employee_type,
        e.status,
        e.address,
@@ -173,7 +175,7 @@ async function fetchEmployeeByUid(uid) {
   };
 }
 async function editEmployee(uid, updates) {
-  const allowed = ['name', 'email', 'phone', 'employee_type', 'status', 'address', 'salary'];
+  const allowed = ['name', 'email', 'phone', 'alternate_phone', 'employee_type', 'status', 'address', 'salary'];
   const fields = [];
   const params = [];
   for (const key of allowed) {
