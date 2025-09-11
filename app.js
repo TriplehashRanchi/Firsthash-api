@@ -27,6 +27,7 @@ const quotationRoutes = require('./routes/quotationRoutes'); // <-- ADD THIS IMP
 const financeRoutes = require('./routes/financialRoutes');
 const employeeRoutes = require('./routes/employeeRoutes');
 const selfRoutes = require('./routes/selfRoutes');
+const leadRoutes = require('./routes/leadRoutes');
 
 
 
@@ -57,6 +58,7 @@ app.use('/api/projects/:projectId/quotations', quotationRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/employee', employeeRoutes);
 app.use('/api/self', selfRoutes);
+app.use('/api', leadRoutes);
 
 
 
@@ -67,9 +69,7 @@ const uploadsBasePath = process.env.NODE_ENV === 'production'
 app.use('/uploads', express.static(uploadsBasePath));
 
 
-// 2. API Route Registration
-// This line tells Express: "Any request to a URL starting with '/api/uploads'
-// should be handled by the logic inside the uploadRoutes file."
+
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/admins', adminRoutes);
 
