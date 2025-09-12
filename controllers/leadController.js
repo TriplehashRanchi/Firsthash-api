@@ -73,7 +73,30 @@ const getAllLeads = async (req, res) => {
   }
 };
 
+const updateStatus = async (req, res) => {
+    try {
+        const { leadId } = req.params;
+        // Expect 'lead_status' in the request body now
+        const { lead_status } = req.body;
+
+        if (!lead_status) {
+            return res.status(400).json({ message: 'Lead status is required.' });
+        }
+
+        const affectedRows = await leadModel.updateLeadStatus(leadId, lead_status);
+
+        if (affectedRows === 0) {
+            return res.status(404).json({ message: 'Lead not found or status unchanged.' });
+        }
+
+        res.status(200).json({ message: `Lead status updated to ${lead_status}` });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 module.exports = {
   createLead,
   getAllLeads,
+  updateStatus
 };
