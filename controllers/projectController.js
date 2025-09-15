@@ -11,7 +11,7 @@ const {
   updateFullProject,
   fetchAllRoles,
   fetchDataForAllocationCalendar,
-  
+  deleteProject
 } = require('../models/projectModel');
 const {addPayment} = require('../models/paymentModel');
 
@@ -206,4 +206,29 @@ exports.getAllocationsData = async (req, res) => {
         console.error('❌ Failed to fetch allocation data:', err);
         res.status(500).json({ error: 'Server error while fetching allocation data.' });
     }
+};
+
+exports.deleteProject = async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const companyId = req.company.id;
+
+    console.log("🗑️ Deleting project:", { projectId, companyId });
+
+    const result = await deleteProject(projectId, companyId);
+
+    console.log("Delete result:", result);
+
+    if (!result.affectedRows) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found or not part of your company.'
+      });
+    }
+
+    res.json({ success: true, message: 'Project deleted successfully.' });
+  } catch (err) {
+    console.error('❌ Failed to delete project:', err);
+    res.status(500).json({ error: 'Server error while deleting project.' });
+  }
 };
