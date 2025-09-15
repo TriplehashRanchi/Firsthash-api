@@ -3,6 +3,8 @@ require('dotenv').config();
 const app = require('./app');
 const cors = require('cors');
 
+app.set('trust proxy', 1);
+
 
 const allowedOrigins = [
   "http://localhost:3000",            // always allow local dev
