@@ -13,5 +13,6 @@ router.post('/:projectId/payments', requireAdminOrManagerWithActiveCompany, proj
 router.put('/:id/status', requireAdminOrManagerWithActiveCompany, projectController.updateProjectStatus);
 
 router.put('/:id', requireAdminOrManagerWithActiveCompany, projectController.updateFullProject);
+router.delete('/:id', requireAdminOrManagerWithActiveCompany, projectController.deleteProject);
 
 module.exports = router;
