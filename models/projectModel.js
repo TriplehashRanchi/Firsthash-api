@@ -55,7 +55,7 @@ exports.insertShoots = async (project_id, shootsData = [], company_id) => {
   if (!project_id || !Array.isArray(shootsData)) return;
 
   console.log('Inserting shoots for project:', project_id)
-  console.log('Company ID:', shootsData);
+  console.log('Shoots data:', shootsData);
 
   for (const shoot of shootsData || []) {
     const { title, date, time, city, selectedServices = {} } = shoot;
@@ -68,22 +68,32 @@ exports.insertShoots = async (project_id, shootsData = [], company_id) => {
 
     const shoot_id = shootRes.insertId;
 
-    // 2. Insert shoot services with mapped service_id
+    // 2. Insert shoot services
     for (const serviceName in selectedServices) {
       const quantity = selectedServices[serviceName] || 1;
-      const service_id = await getServiceIdByName(serviceName, company_id);
+      let service_id = await getServiceIdByName(serviceName, company_id);
 
-      if (service_id) {
-        await db.query(
-          `INSERT INTO shoot_services (shoot_id, service_id, quantity) VALUES (?, ?, ?)`,
-          [shoot_id, service_id, quantity]
+      // If service not found, insert it
+      if (!service_id) {
+        console.log(`ℹ️ Service "${serviceName}" not found. Inserting new service for company ${company_id}...`);
+
+        const [insertServiceRes] = await db.query(
+          `INSERT INTO services (company_id, name) VALUES (?, ?)`,
+          [company_id, serviceName]
         );
-      } else {
-        console.warn(`⚠️ Service "${serviceName}" not found for company ${company_id}`);
+
+        service_id = insertServiceRes.insertId;
       }
+
+      // Now insert into shoot_services
+      await db.query(
+        `INSERT INTO shoot_services (shoot_id, service_id, quantity) VALUES (?, ?, ?)`,
+        [shoot_id, service_id, quantity]
+      );
     }
   }
 };
+
 
 // 4. Save deliverables
 exports.insertDeliverables = async (project_id, deliverables = []) => {
