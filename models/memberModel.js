@@ -50,6 +50,23 @@ async function assignRole({ firebase_uid, role_id }) {
   return assignment;
 }
 
+async function assignRoles({ firebase_uid, role_ids }) {
+  // 1. Safety check: If no roles are provided, do nothing.
+  if (!role_ids || !Array.isArray(role_ids) || role_ids.length === 0) {
+      return;
+  }
+
+  // 2. Prepare data for bulk insert.
+  // mysql2 expects an array of arrays: [[uid, roleId1], [uid, roleId2], ...]
+  const valuesToInsert = role_ids.map(roleId => [firebase_uid, roleId]);
+
+  // 3. Execute the bulk insert query.
+  // Note: We use pool.query (not execute) and the VALUES ? syntax for bulk inserts
+  const sql = `INSERT INTO employee_role_assignments (firebase_uid, role_id) VALUES ?`;
+
+  await pool.query(sql, [valuesToInsert]);
+}
+
 // async function fetchAllEmployees() {
 //   const [rows] = await pool.execute(
 //     `SELECT
@@ -517,6 +534,7 @@ async function createFreelancerPayment({ freelancer_uid, payment_amount, notes }
 module.exports = {
   createEmployee,
   assignRole,
+  assignRoles,
   fetchAllEmployees,
   fetchEmployeeByUid,
   editEmployee,

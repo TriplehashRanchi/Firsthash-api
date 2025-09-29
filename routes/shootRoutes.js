@@ -10,18 +10,18 @@ const { verifyToken, requireAdminWithActiveCompany, requireAdminOrManagerWithAct
 // @access  Private
 router.put('/:shootId/assignments', verifyToken, requireAdminOrManagerWithActiveCompany, updateAssignments);
 router.patch(
-  '/:shootId/city',
+  '/:shootId/details',
   verifyToken, requireAdminOrManagerWithActiveCompany,
   async (req, res) => {
     try {
       const shootId = req.params.shootId;
-      const { city } = req.body;
+      const { city, date, time } = req.body;
       const companyId = req.company.id;
 
-      const result = await updateShootCity(shootId, companyId, city);
+      const result = await updateShootCity(shootId, companyId, { city, date, time });
       res.json(result);
     } catch (err) {
-      console.error('PATCH /api/shoots/:shootId/city error:', err);
+      console.error('PATCH /api/shoots/:shootId/details error:', err);
       res.status(400).json({ error: err.message });
     }
   }

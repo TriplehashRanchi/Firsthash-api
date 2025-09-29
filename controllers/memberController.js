@@ -3,6 +3,7 @@ const admin = require("../utils/admin"); // Firebase Admin SDK
 const {
   createEmployee,
   assignRole,
+  assignRoles,
   fetchAllEmployees,
   fetchEmployeeByUid,
   editEmployee,
@@ -163,12 +164,14 @@ exports.updateMember = async (req, res) => {
       phone,
       alternate_phone,
       employee_type,
-      role_id,
       address = null,
       salary = null,
+      // Extract BOTH the old and new parameters
+      role_id,  // Legacy support (single ID, e.g., 2)
+      roles,    // New support (array of IDs, e.g., [2, 5])
     } = req.body;
 
-    // 1️⃣ Update core employee columns
+    // 1️⃣ Update core employee columns (NO CHANGE HERE)
     await editEmployee(uid, {
       name: full_name,
       email,
@@ -179,11 +182,24 @@ exports.updateMember = async (req, res) => {
       salary: employee_type === 1 ? salary : null,
     });
 
-    // 2️⃣ Update role assignment
+    // 2️⃣ Update role assignment (UPDATED LOGIC)
+    // Always clear existing roles first. This is important for a clean slate.
     await removeRoleAssignments(uid);
-    await assignRole({ firebase_uid: uid, role_id });
 
-    // 3️⃣ Return updated record
+    // Check which data was sent and call the appropriate function
+    if (roles && Array.isArray(roles) && roles.length > 0) {
+         // NEW WAY: If a 'roles' array is provided, use the new bulk insert function
+         console.log(`Assigning multiple roles to ${uid}:`, roles);
+         await assignRoles({ firebase_uid: uid, role_ids: roles });
+
+    } else if (role_id) {
+         // OLD WAY: Fallback to the single 'role_id' if the array wasn't provided
+         console.log(`Assigning single role to ${uid}:`, role_id);
+         await assignRole({ firebase_uid: uid, role_id });
+    }
+    // If neither is provided, the user now has 0 roles (because we called removeRoleAssignments)
+
+    // 3️⃣ Return updated record (NO CHANGE HERE)
     const updated = await fetchEmployeeByUid(uid);
     return res.json(updated);
   } catch (err) {

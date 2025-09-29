@@ -676,7 +676,8 @@ exports.updateFullProject = async (projectId, companyId, projectData) => {
 };
 
 
-exports.updateShootCity = async (shootId, companyId, city) => {
+// models/shootModel.js
+exports.updateShootCity = async (shootId, companyId, { city, date, time }) => {
   const [[row]] = await db.query(
     `SELECT s.id
        FROM shoots s
@@ -687,10 +688,47 @@ exports.updateShootCity = async (shootId, companyId, city) => {
 
   if (!row) throw new Error('Shoot not found or not in this company');
 
-  await db.query(`UPDATE shoots SET city = ? WHERE id = ?`, [city || null, shootId]);
+  const fields = [];
+  const values = [];
 
-  return { message: 'City updated successfully' };
+  if (city !== undefined) {
+    fields.push('city = ?');
+    values.push(city || null);
+  }
+
+  if (date !== undefined) {
+    fields.push('date = ?');
+    values.push(date || null);
+  }
+
+  if (time !== undefined) {
+    fields.push('time = ?');
+    values.push(time || null);
+  }
+
+  if (fields.length === 0) {
+    throw new Error('No fields to update');
+  }
+
+  values.push(shootId);
+
+  await db.query(
+    `UPDATE shoots SET ${fields.join(', ')} WHERE id = ?`,
+    values
+  );
+
+  // 🚀 return raw DB values (same as project fetch)
+  const [[updated]] = await db.query(
+    `SELECT s.id, s.title, s.date, s.time, s.city
+     FROM shoots s
+     WHERE s.id = ?`,
+    [shootId]
+  );
+
+  return { message: 'Shoot updated successfully', shoot: updated };
 };
+
+
 
 exports.deleteProject = async (projectId, companyId) => {
   const [result] = await db.query(
