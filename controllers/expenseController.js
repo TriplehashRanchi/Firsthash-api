@@ -7,7 +7,7 @@ exports.createExpense = async (req, res) => {
         const { projectId } = req.params;
         const { productName, category, expense, date } = req.body; // Assuming date is passed for expense_date
 
-        if (!productName || !category || !expense || !date) {
+        if (!productName  || !expense || !date) {
             return res.status(400).json({ error: 'All expense fields are required.' });
         }
         const newExpense = await expenseModel.createExpense({ 
