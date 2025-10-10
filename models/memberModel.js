@@ -123,32 +123,47 @@ async function fetchAllEmployees(company_id) {
   const [rows] = await pool.execute(
     `
     SELECT
-       e.firebase_uid, e.name, e.email, e.phone, e.alternate_phone, e.employee_type, e.status, e.address, e.salary,
-       JSON_ARRAYAGG(
-         CASE WHEN r.role_id IS NOT NULL THEN JSON_OBJECT('role_id', r.role_id, 'role_name', er.type_name) ELSE NULL END
-       ) AS roles
-     FROM employees e
-     LEFT JOIN employee_role_assignments r ON e.firebase_uid = r.firebase_uid
-     LEFT JOIN employee_roles er ON r.role_id = er.id
-     WHERE e.company_id = ?
-     GROUP BY e.firebase_uid`,
+      e.firebase_uid,
+      e.name,
+      e.email,
+      e.phone,
+      e.alternate_phone,
+      e.employee_type,
+      e.status,
+      e.address,
+      e.salary,
+      e.created_at, -- ✅ Include this
+      JSON_ARRAYAGG(
+        CASE WHEN r.role_id IS NOT NULL
+          THEN JSON_OBJECT('role_id', r.role_id, 'role_name', er.type_name)
+          ELSE NULL
+        END
+      ) AS roles
+    FROM employees e
+    LEFT JOIN employee_role_assignments r ON e.firebase_uid = r.firebase_uid
+    LEFT JOIN employee_roles er ON r.role_id = er.id
+    WHERE e.company_id = ?
+    GROUP BY e.firebase_uid
+    ORDER BY e.created_at DESC -- ✅ Newest employees first
+    `,
     [company_id]
   );
-  return rows.map(row => {
+
+  return rows.map((row) => {
     let roles = [];
     try {
-        if (row.roles && typeof row.roles === 'string' && row.roles.trim() !== '' && row.roles !== '[null]') {
-            const parsedRoles = JSON.parse(row.roles);
-            // Ensure we don't return [null] for employees with no roles
-            if (Array.isArray(parsedRoles) && parsedRoles[0] !== null) {
-                roles = parsedRoles;
-            }
-        } else if (Array.isArray(row.roles) && row.roles[0] !== null) {
-            roles = row.roles;
+      if (row.roles && typeof row.roles === "string" && row.roles.trim() !== "" && row.roles !== "[null]") {
+        const parsedRoles = JSON.parse(row.roles);
+        if (Array.isArray(parsedRoles) && parsedRoles[0] !== null) {
+          roles = parsedRoles;
         }
+      } else if (Array.isArray(row.roles) && row.roles[0] !== null) {
+        roles = row.roles;
+      }
     } catch (e) {
-        console.error("Failed to parse roles JSON in fetchAllEmployees:", row.roles);
+      console.error("Failed to parse roles JSON in fetchAllEmployees:", row.roles);
     }
+
     return { ...row, roles };
   });
 }
