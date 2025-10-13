@@ -99,6 +99,7 @@ const getClientsWithProjects = async (company_id) => {
       c.name,
       c.email,
       c.phone,
+      c.created_at,
       -- This COALESCE handles clients with no projects, returning a clean '[]'.
       COALESCE(
         CONCAT('[',
@@ -127,7 +128,7 @@ const getClientsWithProjects = async (company_id) => {
     GROUP BY
       c.id
     ORDER BY
-      c.name ASC;
+      c.created_at DESC; -- ✅ newest clients first
     `,
     [company_id]
   );
