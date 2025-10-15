@@ -153,10 +153,14 @@ exports.deleteTask = async (taskId, company_id) => {
 exports.getTasksByCompany = async (companyId) => {
   const query = `
     SELECT 
-      t.*, 
+      t.*,
+      p.name AS project_name,
+      c.name AS client_name,
       GROUP_CONCAT(ta.employee_firebase_uid) AS assignee_ids
     FROM tasks AS t
     LEFT JOIN task_assignees AS ta ON t.id = ta.task_id
+    LEFT JOIN projects AS p ON t.project_id = p.id
+    LEFT JOIN clients AS c ON p.client_id = c.id
     WHERE t.company_id = ?
     GROUP BY t.id
     ORDER BY t.created_at DESC
