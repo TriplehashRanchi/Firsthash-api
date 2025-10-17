@@ -500,6 +500,181 @@ exports.fetchDataForAllocationCalendar = async (company_id) => {
     };
 };
 
+// exports.updateFullProject = async (projectId, companyId, projectData) => {
+//   const connection = await db.getConnection();
+
+//   // --- helper to safely parse currency/number strings ---
+//   const toNumber = (v) => {
+//     if (v === null || v === undefined) return 0;
+//     const n = Number(String(v).replace(/[^0-9.\-]/g, ''));
+//     return Number.isFinite(n) ? n : 0;
+//   };
+
+//   try {
+//     await connection.beginTransaction();
+
+//     // --- CLIENT UPDATE (unchanged) ---
+//     const { clients } = projectData;
+//     if (!clients || !clients.clientDetails || !clients.clientDetails.phone) {
+//       throw new Error('Client details with a phone number are required for an update.');
+//     }
+//     const newClientDetails = clients.clientDetails;
+
+//     const [[currentProject]] = await connection.query(
+//       'SELECT client_id FROM projects WHERE id = ? AND company_id = ?',
+//       [projectId, companyId]
+//     );
+//     if (!currentProject) throw new Error('Project not found or does not belong to this company.');
+
+//     const currentClientId = currentProject.client_id;
+//     const [[currentClient]] = await connection.query(
+//       'SELECT phone FROM clients WHERE id = ?',
+//       [currentClientId]
+//     );
+
+//     let finalClientId = currentClientId;
+
+//     if (currentClient.phone !== newClientDetails.phone) {
+//       finalClientId = await exports.findOrCreateClient(companyId, newClientDetails);
+//     } else {
+//       await connection.query(
+//         `UPDATE clients SET name = ?, relation = ?, email = ? WHERE id = ? AND company_id = ?`,
+//         [
+//           newClientDetails.name,
+//           newClientDetails.relation,
+//           newClientDetails.email,
+//           currentClientId,
+//           companyId,
+//         ]
+//       );
+//     }
+
+//     // --- DELETE children (unchanged) ---
+//     await connection.query(
+//       'DELETE FROM shoot_services WHERE shoot_id IN (SELECT id FROM shoots WHERE project_id = ?)',
+//       [projectId]
+//     );
+//     await connection.query('DELETE FROM shoots WHERE project_id = ?', [projectId]);
+//     await connection.query('DELETE FROM deliverables WHERE project_id = ?', [projectId]);
+//     await connection.query('DELETE FROM received_payments WHERE project_id = ?', [projectId]);
+//     await connection.query('DELETE FROM payment_schedules WHERE project_id = ?', [projectId]);
+
+//     // --- READ core fields from payload ---
+//     const {
+//       projectName,
+//       projectPackageCost,             // may be "8446.00" (string)
+//       deliverablesAdditionalCost,     // may be string OR omitted
+//       // overallTotalCost,            // <-- ignore this; we recompute server-side
+//     } = projectData;
+
+//     // --- Recompute additional_deliverables_cost from deliverables list if present ---
+//     const items = projectData?.deliverables?.deliverableItems || [];
+//     const addlFromItems = items.reduce((sum, it) => {
+//       if (it?.isAdditionalCharge) return sum + toNumber(it.additionalChargeAmount);
+//       return sum;
+//     }, 0);
+
+//     // prefer explicit field if sent, else derive from items
+//     const pkgCost = toNumber(projectPackageCost);
+//     const addlCost =
+//       deliverablesAdditionalCost !== undefined && deliverablesAdditionalCost !== null
+//         ? toNumber(deliverablesAdditionalCost)
+//         : addlFromItems;
+
+//     const totalCost = Number((pkgCost + addlCost).toFixed(2));
+
+//     // --- UPDATE main project with recomputed totals ---
+//     await connection.query(
+//       `UPDATE projects SET 
+//          name = ?, 
+//          package_cost = ?, 
+//          additional_deliverables_cost = ?, 
+//          total_cost = ?,
+//          client_id = ?
+//        WHERE id = ? AND company_id = ?`,
+//       [
+//         projectName,
+//         pkgCost,
+//         addlCost,
+//         totalCost,         // ← recomputed; do NOT use client overallTotalCost
+//         finalClientId,
+//         projectId,
+//         companyId,
+//       ]
+//     );
+
+//     // --- RE-INSERT Shoots ---
+//     if (projectData.shoots?.shootList) {
+//       for (const shoot of projectData.shoots.shootList) {
+//         const { title, date, time, city, selectedServices = {} } = shoot;
+//         const [shootRes] = await connection.query(
+//           `INSERT INTO shoots (project_id, title, date, time, city) VALUES (?, ?, ?, ?, ?)`,
+//           [projectId, title, date || null, time || null, city || null]
+//         );
+//         const shoot_id = shootRes.insertId;
+//         for (const serviceName in selectedServices) {
+//           const quantity = selectedServices[serviceName] || 1;
+//           const service_id = await getServiceIdByName(serviceName, companyId);
+//           if (service_id) {
+//             await connection.query(
+//               `INSERT INTO shoot_services (shoot_id, service_id, quantity) VALUES (?, ?, ?)`,
+//               [shoot_id, service_id, quantity]
+//             );
+//           }
+//         }
+//       }
+//     }
+
+//     // --- RE-INSERT Deliverables ---
+//     if (items.length) {
+//       for (const item of items) {
+//         await connection.query(
+//           `INSERT INTO deliverables (project_id, title, is_additional_charge, additional_charge_amount, estimated_date)
+//            VALUES (?, ?, ?, ?, ?)`,
+//           [
+//             projectId,
+//             item.title,
+//             item.isAdditionalCharge ? 1 : 0,
+//             toNumber(item.additionalChargeAmount),
+//             item.date || null,
+//           ]
+//         );
+//       }
+//     }
+
+//     // --- RE-INSERT Received Payments ---
+//     if (projectData.receivedAmount?.transactions) {
+//       for (const tx of projectData.receivedAmount.transactions) {
+//         if (!tx) continue;
+//         await connection.query(
+//           `INSERT INTO received_payments (project_id, amount, description, date_received)
+//            VALUES (?, ?, ?, ?)`,
+//           [projectId, toNumber(tx.amount), tx.description || null, tx.date || null]
+//         );
+//       }
+//     }
+
+//     // --- RE-INSERT Payment Schedule ---
+//     if (projectData.paymentSchedule?.paymentInstallments) {
+//       for (const { dueDate, amount, description } of projectData.paymentSchedule.paymentInstallments) {
+//         await connection.query(
+//           `INSERT INTO payment_schedules (project_id, due_date, amount, description)
+//            VALUES (?, ?, ?, ?)`,
+//           [projectId, dueDate || null, toNumber(amount), description || null]
+//         );
+//       }
+//     }
+
+//     await connection.commit();
+//   } catch (err) {
+//     await connection.rollback();
+//     console.error('DATABASE TRANSACTION FAILED:', err);
+//     throw err;
+//   } finally {
+//     connection.release();
+//   }
+// };
+
 exports.updateFullProject = async (projectId, companyId, projectData) => {
   const connection = await db.getConnection();
 
@@ -549,13 +724,13 @@ exports.updateFullProject = async (projectId, companyId, projectData) => {
       );
     }
 
-    // --- DELETE children (unchanged) ---
+    // --- DELETE children (unchanged except deliverables) ---
     await connection.query(
       'DELETE FROM shoot_services WHERE shoot_id IN (SELECT id FROM shoots WHERE project_id = ?)',
       [projectId]
     );
     await connection.query('DELETE FROM shoots WHERE project_id = ?', [projectId]);
-    await connection.query('DELETE FROM deliverables WHERE project_id = ?', [projectId]);
+    // ❌ DO NOT delete deliverables here (we handle below)
     await connection.query('DELETE FROM received_payments WHERE project_id = ?', [projectId]);
     await connection.query('DELETE FROM payment_schedules WHERE project_id = ?', [projectId]);
 
@@ -625,20 +800,62 @@ exports.updateFullProject = async (projectId, companyId, projectData) => {
       }
     }
 
-    // --- RE-INSERT Deliverables ---
+    // --- SMART UPDATE FOR DELIVERABLES (no delete-all) ---
     if (items.length) {
+      // 1️⃣ Get all existing deliverables for this project
+      const [existingRows] = await connection.query(
+        'SELECT id, title FROM deliverables WHERE project_id = ?',
+        [projectId]
+      );
+
+      const existingByTitle = new Map(existingRows.map(d => [d.title.toLowerCase(), d.id]));
+      const newDeliverableTitles = new Set(items.map(it => it.title.toLowerCase()));
+
+      // 2️⃣ Update or insert deliverables
       for (const item of items) {
-        await connection.query(
-          `INSERT INTO deliverables (project_id, title, is_additional_charge, additional_charge_amount, estimated_date)
-           VALUES (?, ?, ?, ?, ?)`,
-          [
-            projectId,
-            item.title,
-            item.isAdditionalCharge ? 1 : 0,
-            toNumber(item.additionalChargeAmount),
-            item.date || null,
-          ]
-        );
+        const deliverableId = existingByTitle.get(item.title.toLowerCase());
+        if (deliverableId) {
+          // ✅ Update existing deliverable
+          await connection.query(
+            `UPDATE deliverables
+             SET title = ?, 
+                 is_additional_charge = ?, 
+                 additional_charge_amount = ?, 
+                 estimated_date = ?
+             WHERE id = ? AND project_id = ?`,
+            [
+              item.title,
+              item.isAdditionalCharge ? 1 : 0,
+              toNumber(item.additionalChargeAmount),
+              item.date || null,
+              deliverableId,
+              projectId,
+            ]
+          );
+        } else {
+          // ✅ Insert new deliverable
+          await connection.query(
+            `INSERT INTO deliverables (project_id, title, is_additional_charge, additional_charge_amount, estimated_date)
+             VALUES (?, ?, ?, ?, ?)`,
+            [
+              projectId,
+              item.title,
+              item.isAdditionalCharge ? 1 : 0,
+              toNumber(item.additionalChargeAmount),
+              item.date || null,
+            ]
+          );
+        }
+      }
+
+      // 3️⃣ Delete deliverables that were removed by user
+      const titlesToKeep = items.map(it => it.title.toLowerCase());
+      const toDelete = existingRows
+        .filter(d => !titlesToKeep.includes(d.title.toLowerCase()))
+        .map(d => d.id);
+
+      if (toDelete.length > 0) {
+        await connection.query('DELETE FROM deliverables WHERE id IN (?)', [toDelete]);
       }
     }
 
@@ -674,6 +891,8 @@ exports.updateFullProject = async (projectId, companyId, projectData) => {
     connection.release();
   }
 };
+
+
 
 
 // models/shootModel.js
