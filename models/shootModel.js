@@ -57,3 +57,20 @@ exports.updateShootAssignments = async (shootId, serviceName, assigneeIds, compa
         connection.release();
     }
 };
+
+exports.getShootById = async (shootId, companyId) => {
+  const [rows] = await db.query(
+    `
+      SELECT 
+        s.id, 
+        s.title, 
+        s.city AS location,     -- ✅ use 'city' as location
+        CONCAT(s.date, ' ', s.time) AS date_time  -- ✅ merge date & time for message
+      FROM shoots s
+      JOIN projects p ON s.project_id = p.id
+      WHERE s.id = ? AND p.company_id = ?
+    `,
+    [shootId, companyId]
+  );
+  return rows[0];
+};

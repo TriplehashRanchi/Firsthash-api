@@ -1,34 +1,44 @@
 // File: controllers/shootController.js
 
-const shootModel = require('../models/shootModel');
+const shootModel = require("../models/shootModel");
+const userModel = require("../models/userModel");
+const { sendShootAssignmentWhatsApp } = require("../utils/sendAiSensyMessage");
 
 /**
  * Handles the API request to update assignments for a service within a shoot.
  */
 exports.updateAssignments = async (req, res) => {
-    try {
-        const { shootId } = req.params; // Get the shoot ID from the URL
-        const { serviceName, assigneeIds } = req.body; // Get data from the request body
-        const company_id = req.company.id; // Get company ID from auth middleware
+  try {
+    const { shootId } = req.params;
+    const { serviceName, assigneeIds } = req.body;
+    const company_id = req.company.id;
 
-        // Basic validation
-        if (!serviceName || !Array.isArray(assigneeIds)) {
-            return res.status(400).json({ error: 'A serviceName and an array of assigneeIds are required.' });
-        }
+    await shootModel.updateShootAssignments(shootId, serviceName, assigneeIds, company_id);
 
-        // Call the model to perform the database update
-        await shootModel.updateShootAssignments(shootId, serviceName, assigneeIds, company_id);
+    const shoot = await shootModel.getShootById(shootId, company_id);
+    const shootTitle = shoot?.title || "New Shoot";
+    const location = shoot?.location || "-";
+    const dateTime = shoot?.date_time || "-";
+    const shootLink = `${process.env.FRONTEND_URL}/shoots/${shootId}`;
 
-        // Send a success response
-        res.json({ success: true, message: 'Assignments updated successfully.' });
+    const assignees = await userModel.getUsersByFirebaseUids(assigneeIds);
 
-    } catch (err) {
-        console.error('❌ Failed to update shoot assignments:', err);
-        // Handle specific "not found" errors from the model
-        if (err.message.includes('Shoot not found')) {
-            return res.status(404).json({ error: err.message });
-        }
-        // Handle all other errors
-        res.status(500).json({ error: 'An internal server error occurred.' });
+    for (const a of assignees) {
+      if (a.phone) {
+        await sendShootAssignmentWhatsApp({
+          phone: a.phone,
+          assigneeName: a.name,
+          shootTitle,
+          location,
+          dateTime,
+          shootLink,
+        });
+      }
     }
+
+    res.json({ success: true, message: "Assignments updated and WhatsApp sent." });
+  } catch (err) {
+    console.error("❌ Failed to update assignments:", err);
+    res.status(500).json({ error: "Server error while updating shoot assignments." });
+  }
 };

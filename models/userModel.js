@@ -46,5 +46,48 @@ const findUserByPhone = async (phone) => {
   return null;
 };
 
+// ✅ New: get multiple users (assignees) by IDs
+const getUsersByIds = async (userIds = []) => {
+  if (!Array.isArray(userIds) || userIds.length === 0) return [];
 
-module.exports = { getAdminByUID, getEmployeeByUID, findUserByPhone };
+  // Convert to placeholders for safe query
+  const placeholders = userIds.map(() => '?').join(',');
+
+  // Try fetching from employees first
+  const [employeeRows] = await db.query(
+    `SELECT id, name, phone FROM employees WHERE id IN (${placeholders})`,
+    userIds
+  );
+
+  // Then fetch matching admins (if any)
+  const [adminRows] = await db.query(
+    `SELECT id, name, phone FROM admins WHERE id IN (${placeholders})`,
+    userIds
+  );
+
+  // Merge both arrays (employees + admins)
+  return [...employeeRows, ...adminRows];
+};
+// models/userModel.js
+
+const getUsersByFirebaseUids = async (firebaseUids = []) => {
+  if (!Array.isArray(firebaseUids) || firebaseUids.length === 0) return [];
+
+  const placeholders = firebaseUids.map(() => '?').join(',');
+
+  const [employees] = await db.query(
+    `SELECT firebase_uid, name, phone FROM employees WHERE firebase_uid IN (${placeholders})`,
+    firebaseUids
+  );
+
+  const [admins] = await db.query(
+    `SELECT firebase_uid, name, phone FROM admins WHERE firebase_uid IN (${placeholders})`,
+    firebaseUids
+  );
+
+  return [...employees, ...admins];
+};
+
+
+
+module.exports = { getAdminByUID, getEmployeeByUID, findUserByPhone, getUsersByIds, getUsersByFirebaseUids };

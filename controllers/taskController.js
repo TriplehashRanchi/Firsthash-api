@@ -1,6 +1,8 @@
 // File: controllers/taskController.js
 
 const taskModel = require('../models/taskModel');
+const userModel = require('../models/userModel'); // for fetching assignee phone numbers
+const { sendTaskAssignmentWhatsApp } = require('../utils/sendAiSensyMessage'); // 👈 import the util
 
 
 exports.getTasks = async (req, res) => {
@@ -27,28 +29,82 @@ exports.getTasks = async (req, res) => {
  * @access  Private
  */
 exports.createTask = async (req, res) => {
-    try {
-        const company_id = req.company.id;
-        
-        // Use camelCase `assigneeIds` to be consistent with the update route
-        const { assigneeIds, ...restOfBody } = req.body;
+  try {
+    const company_id = req.company.id;
 
-        const taskData = { ...restOfBody, company_id, assigneeIds };
+    let { assigneeIds, ...restOfBody } = req.body;
 
-        if (!taskData.title || taskData.title.trim() === '') {
-            return res.status(400).json({ error: 'Task title is required.' });
+    // ✅ Normalize assigneeIds
+    if (!Array.isArray(assigneeIds)) {
+      if (assigneeIds && typeof assigneeIds === 'string') {
+        assigneeIds = [assigneeIds]; // convert single UID to array
+      } else {
+        assigneeIds = [];
+      }
+    }
+
+    const taskData = { ...restOfBody, company_id, assigneeIds };
+
+    if (!taskData.title || taskData.title.trim() === '') {
+      return res.status(400).json({ error: 'Task title is required.' });
+    }
+
+    // ✅ Create task
+    const newTask = await taskModel.createTask(taskData);
+
+    // ✅ Send WhatsApp to assignees
+    if (assigneeIds.length > 0) {
+      try {
+        console.log('📡 Fetching users for WhatsApp:', assigneeIds);
+
+        // fetch assignees using firebase_uid
+        const assignees = await userModel.getUsersByFirebaseUids(assigneeIds);
+
+        console.log('👥 Found assignees:', assignees);
+
+        const projectName = taskData.project_name || 'Assigned Project';
+        const taskName = taskData.title;
+        const dueDate = taskData.due_date
+          ? new Date(taskData.due_date).toLocaleDateString('en-IN', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+            })
+          : 'No due date';
+        const taskLink = `${process.env.FRONTEND_URL}/tasks/${newTask.id}`;
+
+        for (const a of assignees) {
+          if (a.phone) {
+            console.log(`📤 Sending AiSensy message to ${a.name} (${a.phone})...`);
+            sendTaskAssignmentWhatsApp({
+              phone: a.phone,
+              assigneeName: a.name || 'Team Member',
+              projectName,
+              taskName,
+              dueDate,
+              taskLink,
+            });
+          } else {
+            console.warn(`⚠️ Skipped user ${a.name}: no phone found`);
+          }
         }
 
-        const newTask = await taskModel.createTask(taskData);
-
-        res.status(201).json(newTask);
-    } catch (err) {
-        console.error('❌ Failed to create task:', err);
-        // Pass the specific database error message to the frontend for better debugging
-        res.status(500).json({ error: err.sqlMessage || 'Server error while creating task.' });
+        console.log(`✅ WhatsApp notifications triggered for task: ${newTask.title}`);
+      } catch (notifyErr) {
+        console.error('⚠️ Failed to send WhatsApp notification:', notifyErr.message);
+      }
+    } else {
+      console.log('ℹ️ No assignees found, skipping WhatsApp notification');
     }
-};
 
+    res.status(201).json(newTask);
+  } catch (err) {
+    console.error('❌ Failed to create task:', err);
+    res.status(500).json({
+      error: err.sqlMessage || 'Server error while creating task.',
+    });
+  }
+};
 
 /**
  * @desc    Update an existing task's details (title, status, etc.)
