@@ -28,7 +28,7 @@ const financeRoutes = require('./routes/financialRoutes');
 const employeeRoutes = require('./routes/employeeRoutes');
 const selfRoutes = require('./routes/selfRoutes');
 const leadRoutes = require('./routes/leadRoutes');
-
+const chatRoutes = require('./routes/chatRoutes');
 
 
 const app = express();
@@ -59,6 +59,7 @@ app.use('/api/finance', financeRoutes);
 app.use('/api/employee', employeeRoutes);
 app.use('/api/self', selfRoutes);
 app.use('/api', leadRoutes);
+app.use('/api/chat', chatRoutes);
 
 
 
