@@ -54,7 +54,7 @@ exports.createFullProject = async (req, res) => {
 
     // 3. Save sub-sections
     await insertShoots(project_id, shoots?.shootList, company_id);
-    await insertDeliverables(project_id, deliverables?.deliverableItems || []);
+    await insertDeliverables(company_id, project_id, deliverables?.deliverableItems || []);
     await insertReceivedAmount(project_id, receivedAmount?.transactions[0]);
     // await insertPaymentSchedule(project_id, paymentSchedule?.paymentInstallments || []);
   

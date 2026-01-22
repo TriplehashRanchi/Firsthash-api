@@ -96,13 +96,13 @@ exports.insertShoots = async (project_id, shootsData = [], company_id) => {
 
 
 // 4. Save deliverables
-exports.insertDeliverables = async (project_id, deliverables = []) => {
+exports.insertDeliverables = async (company_id, project_id, deliverables = []) => {
   for (const item of deliverables) {
-    await db.query(
+    const [res] =  await db.query(
       `
        INSERT INTO deliverables
-         (project_id, title, is_additional_charge, additional_charge_amount, estimated_date)
-       VALUES (?, ?, ?, ?, ?)
+         ( project_id, title, is_additional_charge, additional_charge_amount, estimated_date)
+       VALUES ( ?, ?, ?, ?, ?)
       `,
       [
         project_id,
@@ -112,6 +112,19 @@ exports.insertDeliverables = async (project_id, deliverables = []) => {
         item.date || null
       ]
     );
+
+    const deliverableId = res.insertId;
+    // Ensure task exists and stays updated
+     // Create task
+      await db.query(
+  `
+  INSERT INTO tasks (id, company_id, deliverable_id, title, status)
+  VALUES (?, ?, ?, ?, 'to_do')
+  `,
+  [uuidv4(), company_id, deliverableId, item.title]
+);
+  
+
   }
 };
 
@@ -800,43 +813,80 @@ exports.updateFullProject = async (projectId, companyId, projectData) => {
       }
     }
 
-    // --- SMART UPDATE FOR DELIVERABLES (no delete-all) ---
+   // --- SMART UPDATE FOR DELIVERABLES + TASK SYNC ---
     if (items.length) {
-      // 1️⃣ Get all existing deliverables for this project
+      // 1️⃣ Get existing deliverables
       const [existingRows] = await connection.query(
         'SELECT id, title FROM deliverables WHERE project_id = ?',
         [projectId]
       );
 
-      const existingByTitle = new Map(existingRows.map(d => [d.title.toLowerCase(), d.id]));
-      const newDeliverableTitles = new Set(items.map(it => it.title.toLowerCase()));
+      const existingById = new Map(
+  existingRows.map(d => [d.id, d])
+);
 
-      // 2️⃣ Update or insert deliverables
+
+      const incomingTitles = items.map(it => it.title.toLowerCase());
+
+      // 2️⃣ Update or Insert
       for (const item of items) {
-        const deliverableId = existingByTitle.get(item.title.toLowerCase());
-        if (deliverableId) {
-          // ✅ Update existing deliverable
+        const normalizedTitle = item.title.toLowerCase();
+       const existingId = item.id && existingById.has(item.id)
+  ? item.id
+  : null;
+
+
+        if (existingId) {
+          // UPDATE deliverable
           await connection.query(
             `UPDATE deliverables
-             SET title = ?, 
-                 is_additional_charge = ?, 
-                 additional_charge_amount = ?, 
-                 estimated_date = ?
-             WHERE id = ? AND project_id = ?`,
+         SET title = ?, 
+             is_additional_charge = ?, 
+             additional_charge_amount = ?, 
+             estimated_date = ?
+         WHERE id = ? AND project_id = ?`,
             [
               item.title,
               item.isAdditionalCharge ? 1 : 0,
               toNumber(item.additionalChargeAmount),
               item.date || null,
-              deliverableId,
+              existingId,
               projectId,
             ]
           );
+
+          const [[existingTask]] = await connection.query(
+            `
+  SELECT id FROM tasks
+  WHERE deliverable_id = ? AND is_auto_generated = 1
+  LIMIT 1
+  `,
+            [existingId]
+          );
+
+          if (!existingTask) {
+            // Only create if no auto-task exists yet
+            await connection.query(
+              `
+    INSERT INTO tasks (id, company_id, deliverable_id, title, status, is_auto_generated)
+    VALUES (?, ?, ?, ?, 'to_do', 1)
+    `,
+              [uuidv4(), companyId, existingId, item.title]
+            );
+          } else {
+            // Keep title in sync
+            await connection.query(
+              `UPDATE tasks SET title = ? WHERE id = ?`,
+              [item.title, existingTask.id]
+            );
+          }
+
         } else {
-          // ✅ Insert new deliverable
-          await connection.query(
-            `INSERT INTO deliverables (project_id, title, is_additional_charge, additional_charge_amount, estimated_date)
-             VALUES (?, ?, ?, ?, ?)`,
+          // INSERT new deliverable
+          const [res] = await connection.query(
+            `INSERT INTO deliverables
+          (project_id, title, is_additional_charge, additional_charge_amount, estimated_date)
+         VALUES (?, ?, ?, ?, ?)`,
             [
               projectId,
               item.title,
@@ -845,19 +895,32 @@ exports.updateFullProject = async (projectId, companyId, projectData) => {
               item.date || null,
             ]
           );
+
+          const deliverableId = res.insertId;
+
+          // Create task
+          await connection.query(
+            `
+  INSERT INTO tasks (id, company_id, deliverable_id, title, status, is_auto_generated)
+  VALUES (?, ?, ?, ?, 'to_do', 1)
+  `,
+            [uuidv4(), companyId, deliverableId, item.title]
+          );
+
         }
       }
 
-      // 3️⃣ Delete deliverables that were removed by user
-      const titlesToKeep = items.map(it => it.title.toLowerCase());
+      // 3️⃣ Delete removed deliverables + tasks
       const toDelete = existingRows
-        .filter(d => !titlesToKeep.includes(d.title.toLowerCase()))
+        .filter(d => !incomingTitles.includes(d.title.toLowerCase()))
         .map(d => d.id);
 
-      if (toDelete.length > 0) {
+      if (toDelete.length) {
+        await connection.query('DELETE FROM tasks WHERE deliverable_id IN (?)', [toDelete]);
         await connection.query('DELETE FROM deliverables WHERE id IN (?)', [toDelete]);
       }
     }
+
 
     // --- RE-INSERT Received Payments ---
     if (projectData.receivedAmount?.transactions) {
