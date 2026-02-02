@@ -2,13 +2,25 @@ const axios = require('axios');
 const fbPageModel = require('../models/fbPageModel');
 const {
   getFbConnectionByCompanyId,
+  getFbPagesByCompanyId,
   upsertFbPages,
   markPagesSubscribed,
   deleteFbPagesByCompanyId,
 } = require('../models/fbAuthModel');
-const { getCompanyByOwnerUid } = require('../models/companyModel');
+const {
+  getCompanyByOwnerUid,
+  getCompanyByEmployeeUid,
+} = require('../models/companyModel');
 
 const FB_GRAPH_VERSION = 'v16.0';
+
+const getCompanyForAdmin = async (firebaseUid) => {
+  if (!firebaseUid) return null;
+  return (
+    (await getCompanyByOwnerUid(firebaseUid)) ||
+    (await getCompanyByEmployeeUid(firebaseUid))
+  );
+};
 
 const saveFbPages = async (req, res) => {
   try {
@@ -34,7 +46,12 @@ const getSavedFbPages = async (req, res) => {
       return res.status(400).json({ message: 'Admin ID is missing' });
     }
 
-    const pages = await fbPageModel.getSavedFbPages(adminId);
+    const company = await getCompanyForAdmin(adminId);
+    if (!company) {
+      return res.status(404).json({ message: 'Company not found' });
+    }
+
+    const pages = await getFbPagesByCompanyId(company.id);
     return res.status(200).json({ data: pages });
   } catch (error) {
     console.error('Error retrieving saved Facebook pages:', error.message);
@@ -74,7 +91,7 @@ const deleteAllSavedFbPages = async (req, res) => {
 
 const getAvailableFbPages = async (req, res) => {
   try {
-    const company = await getCompanyByOwnerUid(req.firebase_uid);
+    const company = await getCompanyForAdmin(req.firebase_uid);
     if (!company) {
       return res.status(404).json({ message: 'Company not found' });
     }
@@ -107,7 +124,7 @@ const selectFbPages = async (req, res) => {
       return res.status(400).json({ message: 'pageIds is required' });
     }
 
-    const company = await getCompanyByOwnerUid(req.firebase_uid);
+    const company = await getCompanyForAdmin(req.firebase_uid);
     if (!company) {
       return res.status(404).json({ message: 'Company not found' });
     }

@@ -36,6 +36,39 @@ const getSavedFbPages = async (adminId) => {
   }
 };
 
+const getSavedFbPageByPageId = async (pageId) => {
+  try {
+    const query = `
+      SELECT *
+      FROM fb_page_selections
+      WHERE page_id = ?
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `;
+    const [rows] = await db.query(query, [pageId]);
+    return rows[0] || null;
+  } catch (error) {
+    throw new Error(`Error retrieving Facebook page by page_id: ${error.message}`);
+  }
+};
+
+const getSavedFbPagesByPageId = async (pageId) => {
+  try {
+    const query = `
+      SELECT *
+      FROM fb_page_selections
+      WHERE page_id = ?
+      ORDER BY updated_at DESC
+    `;
+    const [rows] = await db.query(query, [pageId]);
+    return rows;
+  } catch (error) {
+    throw new Error(
+      `Error retrieving Facebook pages by page_id: ${error.message}`
+    );
+  }
+};
+
 const deleteSavedFbPages = async (adminId, pageId) => {
   try {
     const query = `DELETE FROM fb_page_selections WHERE admin_id = ? AND page_id = ?`;
@@ -59,6 +92,8 @@ const deleteAllSavedFbPages = async (adminId) => {
 module.exports = {
   saveFbPages,
   getSavedFbPages,
+  getSavedFbPageByPageId,
+  getSavedFbPagesByPageId,
   deleteSavedFbPages,
   deleteAllSavedFbPages,
 };

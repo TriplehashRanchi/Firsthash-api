@@ -111,7 +111,7 @@ const pollFacebookLeads = async (req, res) => {
               limit(async () => {
                 const l = await axios.get(
                   `https://graph.facebook.com/${FB_GRAPH_VERSION}/${fid}/leads` +
-                    `?fields=id,created_time,field_data,ad_id,adgroup_id,campaign_id` +
+                    `?fields=id,created_time,field_data,ad_id,campaign_id` +
                     `&access_token=${token}${sinceStr}`
                 );
 

@@ -1,5 +1,6 @@
 const axios = require('axios');
 const fbLeadsModel = require('../models/fbLeadsModel');
+const { getSavedFbPagesByPageId } = require('../models/fbPageModel');
 const parseFBLead = require('../utils/parseFBLead');
 const { sendEmailAutomation } = require('../utils/sendEmail');
 const { sendAiSensyMessage } = require('../utils/sendAiSensyMessage');
@@ -9,6 +10,73 @@ const {
 } = require('../models/fbAuthModel');
 
 const FB_GRAPH_VERSION = 'v16.0';
+const LEAD_FIELDS = 'id,created_time,field_data,ad_id,campaign_id';
+
+const parseFormIds = (formIds) => {
+  if (!formIds) return [];
+  if (Array.isArray(formIds)) return formIds;
+  if (typeof formIds === 'string') {
+    try {
+      const parsed = JSON.parse(formIds);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return [];
+    }
+  }
+  return [];
+};
+
+const fetchLeadByToken = async (leadgenId, accessToken) => {
+  const response = await axios.get(
+    `https://graph.facebook.com/${FB_GRAPH_VERSION}/${leadgenId}`,
+    {
+      params: {
+        access_token: accessToken,
+        fields: LEAD_FIELDS,
+      },
+    }
+  );
+
+  return response.data;
+};
+
+const buildTokenCandidates = async (pageId, formId) => {
+  const candidates = [];
+  const page = await getFbPageByPageId(pageId);
+  if (page?.company_id && page?.page_access_token) {
+    const connection = await getFbConnectionByCompanyId(page.company_id);
+    if (connection?.admin_firebase_uid) {
+      candidates.push({
+        admin_id: connection.admin_firebase_uid,
+        page_access_token: page.page_access_token,
+        source: 'fb_pages',
+        matched_form: true,
+        updated_at: page.updated_at || page.created_at || null,
+      });
+    }
+  }
+
+  const savedPages = await getSavedFbPagesByPageId(pageId);
+  for (const saved of savedPages) {
+    if (!saved?.admin_id || !saved?.page_access_token) continue;
+
+    const formIds = parseFormIds(saved.form_ids);
+    const matchedForm = !formId || formIds.length === 0 || formIds.includes(formId);
+    candidates.push({
+      admin_id: saved.admin_id,
+      page_access_token: saved.page_access_token,
+      source: 'fb_page_selections',
+      matched_form: matchedForm,
+      updated_at: saved.updated_at || saved.created_at || null,
+    });
+  }
+
+  return candidates.sort((a, b) => {
+    if (a.matched_form !== b.matched_form) return a.matched_form ? -1 : 1;
+    if (a.source !== b.source) return a.source === 'fb_pages' ? -1 : 1;
+    return new Date(b.updated_at || 0) - new Date(a.updated_at || 0);
+  });
+};
 
 const verifyWebhook = (req, res) => {
   const mode = req.query['hub.mode'];
@@ -25,45 +93,83 @@ const verifyWebhook = (req, res) => {
 const handleLeadgen = async (change) => {
   const leadgenId = change?.value?.leadgen_id;
   const pageId = change?.value?.page_id;
+  const formId = change?.value?.form_id || null;
 
-  if (!leadgenId || !pageId) return;
+  if (!leadgenId || !pageId) {
+    console.warn('Webhook skipped: missing leadgen_id or page_id', change?.value);
+    return;
+  }
 
-  const page = await getFbPageByPageId(pageId);
-  if (!page?.page_access_token) return;
+  const candidates = await buildTokenCandidates(pageId, formId);
+  if (!candidates.length) {
+    console.warn(
+      `Webhook skipped: no admin/token mapping found for page ${pageId}`
+    );
+    return;
+  }
 
-  const leadResponse = await axios.get(
-    `https://graph.facebook.com/${FB_GRAPH_VERSION}/${leadgenId}`,
-    {
-      params: {
-        access_token: page.page_access_token,
-        fields: 'id,created_time,field_data,ad_id,adgroup_id,campaign_id',
-      },
+  let selectedCandidate = null;
+  let raw = null;
+  const tokenErrors = [];
+  const seenTokens = new Set();
+
+  for (const candidate of candidates) {
+    const token = candidate.page_access_token;
+    if (!token || seenTokens.has(token)) continue;
+    seenTokens.add(token);
+
+    try {
+      const leadData = await fetchLeadByToken(leadgenId, token);
+      if (leadData?.error) {
+        tokenErrors.push({
+          admin_id: candidate.admin_id,
+          source: candidate.source,
+          error: leadData.error,
+        });
+        continue;
+      }
+
+      selectedCandidate = candidate;
+      raw = leadData;
+      break;
+    } catch (error) {
+      tokenErrors.push({
+        admin_id: candidate.admin_id,
+        source: candidate.source,
+        error: error?.response?.data || error.message,
+      });
     }
-  );
+  }
 
-  if (leadResponse?.data?.error) return;
+  if (!selectedCandidate || !raw) {
+    console.error(
+      `Webhook lead fetch failed for leadgen_id ${leadgenId}. Tried ${seenTokens.size} token(s).`,
+      tokenErrors
+    );
+    return;
+  }
 
-  const raw = leadResponse.data;
   const parsed = parseFBLead(raw);
 
   const existing = await fbLeadsModel.leadExists(raw.id);
-  if (existing) return;
-
-  const connection = await getFbConnectionByCompanyId(page.company_id);
-  const adminId = connection?.admin_firebase_uid || null;
-
-  if (!adminId) return;
+  if (existing) {
+    console.log(`Webhook skipped duplicate lead: ${raw.id}`);
+    return;
+  }
 
   const leadToInsert = {
     ...parsed,
     fb_lead_id: raw.id,
-    admin_id: adminId,
+    admin_id: selectedCandidate.admin_id,
     source: 'facebook',
     form_name: null,
     raw_payload: raw,
   };
 
   await fbLeadsModel.insertLead(leadToInsert);
+  console.log(
+    `Webhook inserted lead ${raw.id} for admin ${selectedCandidate.admin_id} via ${selectedCandidate.source}`
+  );
 
   sendEmailAutomation(leadToInsert, 'new_lead').catch((err) =>
     console.error('Email error:', err)
