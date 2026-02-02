@@ -29,6 +29,12 @@ const employeeRoutes = require('./routes/employeeRoutes');
 const selfRoutes = require('./routes/selfRoutes');
 const leadRoutes = require('./routes/leadRoutes');
 const chatRoutes = require('./routes/chatRoutes');
+const fbAuthRoutes = require('./routes/fbAuthRoutes');
+const fbDataRoutes = require('./routes/fbDataRoutes');
+const fbLeadRoutes = require('./routes/fbLeadRoutes');
+const fbPageRoutes = require('./routes/fbPageRoutes');
+const fbWebhookRoutes = require('./routes/fbWebhookRoutes');
+const taskBundleRoutes = require('./routes/taskBundleRoutes');
 
 
 const app = express();
@@ -60,6 +66,12 @@ app.use('/api/employee', employeeRoutes);
 app.use('/api/self', selfRoutes);
 app.use('/api', leadRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/auth', fbAuthRoutes);
+app.use('/api/fb', fbDataRoutes);
+app.use('/api/fb', fbPageRoutes);
+app.use('/api/fb/leads', fbLeadRoutes);
+app.use('/api/fb/webhook', fbWebhookRoutes);
+app.use('/api/task-bundles', taskBundleRoutes);
 
 
 

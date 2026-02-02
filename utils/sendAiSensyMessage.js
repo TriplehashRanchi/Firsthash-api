@@ -188,10 +188,45 @@ const sendShootAssignmentWhatsApp = async ({ phone, assigneeName, shootTitle, lo
   }
 };
 
+const sendAiSensyMessage = async (lead, eventName) => {
+  if (!process.env.AISENSY_API_KEY) return;
+  if (!lead?.phone_number) return;
+
+  try {
+    const formattedPhone = `91${lead.phone_number.replace(/\D/g, '').slice(-10)}`;
+    await axios.post(
+      'https://backend.aisensy.com/campaign/t1/api/v2',
+      {
+        apiKey: process.env.AISENSY_API_KEY,
+        campaignName: 'firsthash_new_lead',
+        destination: formattedPhone,
+        userName: lead.full_name || 'Lead',
+        source: 'FirstHash Leads',
+        templateParams: [
+          lead.full_name || 'Lead',
+          lead.email || '',
+          lead.phone_number || '',
+          lead.form_name || '',
+          eventName || 'new_lead',
+        ],
+        tags: ['facebook_lead'],
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+  } catch (err) {
+    console.error('❌ AiSensy send failed:', err?.response?.data || err.message);
+  }
+};
+
 module.exports = { 
   sendWhatsAppAccountActivated, 
   sendWhatsAppsAccountActivated, 
   sendPaidWhatsAppConfirmation, 
   sendTaskAssignmentWhatsApp,
-  sendShootAssignmentWhatsApp
+  sendShootAssignmentWhatsApp,
+  sendAiSensyMessage
 };
