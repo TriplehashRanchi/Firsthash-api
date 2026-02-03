@@ -1,11 +1,11 @@
 const axios = require('axios');
-const fbPageModel = require('../models/fbPageModel');
 const {
   getFbConnectionByCompanyId,
   getFbPagesByCompanyId,
   upsertFbPages,
   markPagesSubscribed,
   deleteFbPagesByCompanyId,
+  deleteFbPageByCompanyIdAndPageId,
 } = require('../models/fbAuthModel');
 const {
   getCompanyByOwnerUid,
@@ -24,12 +24,37 @@ const getCompanyForAdmin = async (firebaseUid) => {
 
 const saveFbPages = async (req, res) => {
   try {
-    const { userId, selections } = req.body;
-    if (!userId || !selections || !Array.isArray(selections)) {
+    const adminId = req.firebase_uid || req.user?.firebase_uid || req.body?.userId;
+    const { selections } = req.body;
+    if (!adminId || !selections || !Array.isArray(selections)) {
       return res.status(400).json({ message: 'Invalid payload' });
     }
 
-    await fbPageModel.saveFbPages(userId, selections);
+    const company = await getCompanyForAdmin(adminId);
+    if (!company) {
+      return res.status(404).json({ message: 'Company not found' });
+    }
+
+    const connection = await getFbConnectionByCompanyId(company.id);
+    const rows = selections
+      .map((selection) => ({
+        page_id: selection.pageId || selection.page_id,
+        page_name: selection.pageName || selection.page_name || null,
+        page_access_token:
+          selection.pageAccessToken || selection.page_access_token || null,
+        page_token_expires_at: null,
+        is_subscribed: selection.is_subscribed ? 1 : 0,
+      }))
+      .filter((row) => row.page_id && row.page_access_token);
+
+    if (!rows.length) {
+      return res
+        .status(400)
+        .json({ message: 'No valid page rows with access token' });
+    }
+
+    await upsertFbPages(company.id, connection?.fb_user_id || '', rows);
+
     return res
       .status(200)
       .json({ message: 'Facebook page selections saved successfully' });
@@ -67,8 +92,13 @@ const deleteSavedFbPages = async (req, res) => {
       return res.status(400).json({ message: 'Admin ID is missing' });
     }
 
-    const pages = await fbPageModel.deleteSavedFbPages(adminId, pageID);
-    return res.status(200).json({ data: pages });
+    const company = await getCompanyForAdmin(adminId);
+    if (!company) {
+      return res.status(404).json({ message: 'Company not found' });
+    }
+
+    const result = await deleteFbPageByCompanyIdAndPageId(company.id, pageID);
+    return res.status(200).json({ data: result });
   } catch (error) {
     console.error('Error retrieving saved Facebook pages:', error.message);
     return res.status(500).json({ message: error.message });
@@ -81,7 +111,13 @@ const deleteAllSavedFbPages = async (req, res) => {
     if (!adminId) {
       return res.status(400).json({ message: 'Admin ID is missing' });
     }
-    await fbPageModel.deleteAllSavedFbPages(adminId);
+
+    const company = await getCompanyForAdmin(adminId);
+    if (!company) {
+      return res.status(404).json({ message: 'Company not found' });
+    }
+
+    await deleteFbPagesByCompanyId(company.id);
     return res.status(204).send();
   } catch (error) {
     console.error('Error deleting all FB pages:', error);

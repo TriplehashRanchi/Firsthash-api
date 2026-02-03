@@ -96,10 +96,36 @@ const deleteFbPagesByCompanyId = async (company_id) => {
   await db.query(`DELETE FROM fb_pages WHERE company_id = ?`, [company_id]);
 };
 
+const deleteFbPageByCompanyIdAndPageId = async (company_id, page_id) => {
+  const [result] = await db.query(
+    `DELETE FROM fb_pages WHERE company_id = ? AND page_id = ?`,
+    [company_id, page_id]
+  );
+  return result;
+};
+
 const getFbPagesByCompanyId = async (company_id) => {
   const [rows] = await db.query(
     `SELECT * FROM fb_pages WHERE company_id = ?`,
     [company_id]
+  );
+  return rows;
+};
+
+const getFbPageCandidatesByPageId = async (page_id) => {
+  const [rows] = await db.query(
+    `
+    SELECT
+      p.*,
+      c.admin_firebase_uid AS admin_id
+    FROM fb_pages p
+    LEFT JOIN fb_connections c
+      ON c.company_id = p.company_id
+      AND c.status = 'active'
+    WHERE p.page_id = ?
+    ORDER BY p.updated_at DESC, c.updated_at DESC
+    `,
+    [page_id]
   );
   return rows;
 };
@@ -118,6 +144,8 @@ module.exports = {
   markPagesSubscribed,
   getFbConnectionByCompanyId,
   deleteFbPagesByCompanyId,
+  deleteFbPageByCompanyIdAndPageId,
   getFbPagesByCompanyId,
+  getFbPageCandidatesByPageId,
   getFbPageByPageId,
 };
