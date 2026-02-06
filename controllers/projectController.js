@@ -11,7 +11,8 @@ const {
   updateFullProject,
   fetchAllRoles,
   fetchDataForAllocationCalendar,
-  deleteProject
+  deleteProject,
+  enableShowQuotationDeliverables
 } = require('../models/projectModel');
 const {addPayment} = require('../models/paymentModel');
 
@@ -119,6 +120,24 @@ exports.getProjectById = async (req, res) => {
     // and send a generic 500 Server Error status.
     console.error('❌ Failed to fetch project details:', err);
     res.status(500).json({ error: 'An error occurred while fetching project details.' });
+  }
+};
+
+exports.enableShowQuotationDeliverables = async (req, res) => {
+  try {
+    const company_id = req.company.id;
+    const projectId = req.params.id;
+
+    const updated = await enableShowQuotationDeliverables(projectId, company_id);
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Project not found or permission denied.' });
+    }
+
+    res.json(updated);
+  } catch (err) {
+    console.error('❌ Failed to enable quotation deliverables:', err);
+    res.status(500).json({ error: 'Server error while enabling quotation deliverables.' });
   }
 };
 
