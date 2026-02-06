@@ -122,6 +122,7 @@ exports.updateTask = async (req, res) => {
         delete updateData.company_id;
         delete updateData.project_id;
         delete updateData.deliverable_id;
+        delete updateData.deliverable_2_id;
 
         if (Object.keys(updateData).length === 0) {
             return res.status(400).json({ error: 'No update data provided.' });

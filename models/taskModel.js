@@ -12,6 +12,7 @@ exports.createTask = async (taskData) => {
         priority,
         project_id,
         deliverable_id,
+        deliverable_2_id,
         parent_task_id,
         assigneeIds, // Use camelCase to be consistent with the update function
     } = taskData;
@@ -26,7 +27,7 @@ exports.createTask = async (taskData) => {
         await connection.query(
             `INSERT INTO tasks (
                 id, company_id, title, description, due_date, priority,
-                project_id, deliverable_id, parent_task_id, status
+                project_id, deliverable_id, deliverable_2_id, parent_task_id, status
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'to_do')`,
             [
                 taskId,
@@ -37,6 +38,7 @@ exports.createTask = async (taskData) => {
                 priority || 'medium',
                 project_id,
                 deliverable_id,
+                deliverable_2_id,
                 parent_task_id,
             ]
         );

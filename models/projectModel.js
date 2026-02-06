@@ -165,6 +165,7 @@ exports.getAllProjectsWithDetails = async (company_id, statusFilter) => {
       p.id,
       p.name,
       p.status,
+      p.show_quotation_deliverables AS "showQuotationDeliverables",
       p.package_cost AS "packageCost",
       p.additional_deliverables_cost AS "additionalCost",
       c.name AS "clientName",
@@ -215,6 +216,7 @@ exports.getProjectDetailsById = async (projectUuid, companyId) => {
     const projectQuery = db.query(`
         SELECT 
             p.id, p.name AS "projectName", p.status AS "projectStatus",
+            p.show_quotation_deliverables AS "showQuotationDeliverables",
             p.package_cost AS "projectPackageCost", 
             p.additional_deliverables_cost AS "deliverablesAdditionalCost",
             p.total_cost AS "overallTotalCost",
@@ -241,6 +243,7 @@ exports.getProjectDetailsById = async (projectUuid, companyId) => {
     
     // Get simple list of deliverables
     const deliverablesQuery = db.query('SELECT * FROM deliverables WHERE project_id = ?', [projectUuid]);
+    const deliverables2Query = db.query('SELECT * FROM deliverables_2 WHERE project_id = ?', [projectUuid]);
 
     // Get all tasks (project-level and deliverable-level) and their assignees
  const tasksQuery = db.query(`
@@ -248,8 +251,13 @@ exports.getProjectDetailsById = async (projectUuid, companyId) => {
         FROM tasks t
         LEFT JOIN task_assignees ta ON t.id = ta.task_id
         LEFT JOIN employees e ON ta.employee_firebase_uid = e.firebase_uid
-        WHERE t.company_id = ? AND (t.project_id = ? OR t.deliverable_id IN (SELECT id FROM deliverables WHERE project_id = ?))
-    `, [companyId, projectUuid, projectUuid]);
+        WHERE t.company_id = ?
+          AND (
+            t.project_id = ?
+            OR t.deliverable_id IN (SELECT id FROM deliverables WHERE project_id = ?)
+            OR t.deliverable_2_id IN (SELECT id FROM deliverables_2 WHERE project_id = ?)
+          )
+    `, [companyId, projectUuid, projectUuid, projectUuid]);
     
     // Financials
     const receivedPaymentsQuery = db.query('SELECT * FROM received_payments WHERE project_id = ? ORDER BY date_received DESC', [projectUuid]);
@@ -282,10 +290,10 @@ exports.getProjectDetailsById = async (projectUuid, companyId) => {
 
     // 2. Execute all queries at once.
     const [
-        [projectResults], [shootRows], [deliverables], [taskAssignmentRows], 
+        [projectResults], [shootRows], [deliverables], [deliverables2], [taskAssignmentRows], 
         [receivedPayments], [paymentSchedules], [expenses], [teamRoleRows], [allEmployees], [quotations]
     ] = await Promise.all([
-        projectQuery, shootsQuery, deliverablesQuery, tasksQuery,
+        projectQuery, shootsQuery, deliverablesQuery, deliverables2Query, tasksQuery,
         receivedPaymentsQuery, paymentScheduleQuery, expensesQuery, teamRolesQuery, allEmployeesQuery, quotationsQuery 
     ]);
 
@@ -371,6 +379,7 @@ exports.getProjectDetailsById = async (projectUuid, companyId) => {
         },
         shoots: { shootList: Object.values(shootsById) },
         deliverables: { deliverableItems: deliverables.map(d => ({...d, additional_charge_amount: parseFloat(d.additional_charge_amount)})) },
+        deliverables2: { deliverableItems: deliverables2 },
         tasks: Object.values(tasksById), // A flat list of all tasks for this project
         receivedAmount: { transactions: receivedPayments.map(p => ({ ...p, amount: parseFloat(p.amount) })) },
         paymentSchedule: { paymentInstallments: paymentSchedules.map(p => ({ ...p, amount: parseFloat(p.amount) })) },
@@ -388,13 +397,33 @@ exports.getProjectDetailsById = async (projectUuid, companyId) => {
 
     @returns {Promise<object>} The result object from the database driver.
     */
-    exports.updateStatusById = async (projectId, newStatus) => {
+exports.updateStatusById = async (projectId, newStatus) => {
     const [result] = await db.query(`
     UPDATE projects SET status = ? WHERE id = ?`,
     [newStatus, projectId]
     );
     return result;
     };
+
+exports.enableShowQuotationDeliverables = async (projectId, companyId) => {
+  const [result] = await db.query(
+    `
+      UPDATE projects
+      SET show_quotation_deliverables = 1
+      WHERE id = ? AND company_id = ?
+    `,
+    [projectId, companyId]
+  );
+
+  if (!result.affectedRows) return null;
+
+  const [[project]] = await db.query(
+    `SELECT id, show_quotation_deliverables AS showQuotationDeliverables FROM projects WHERE id = ?`,
+    [projectId]
+  );
+
+  return project;
+};
 
 
 // --- REPLACE your existing function with this FINAL, CORRECTED version ---
