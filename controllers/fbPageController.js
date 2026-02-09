@@ -36,6 +36,9 @@ const saveFbPages = async (req, res) => {
     }
 
     const connection = await getFbConnectionByCompanyId(company.id);
+    if (!connection?.fb_user_id) {
+      return res.status(400).json({ message: 'Facebook not connected' });
+    }
     const rows = selections
       .map((selection) => ({
         page_id: selection.pageId || selection.page_id,
@@ -53,7 +56,7 @@ const saveFbPages = async (req, res) => {
         .json({ message: 'No valid page rows with access token' });
     }
 
-    await upsertFbPages(company.id, connection?.fb_user_id || '', rows);
+    await upsertFbPages(company.id, connection.fb_user_id, rows);
 
     return res
       .status(200)
@@ -135,6 +138,9 @@ const getAvailableFbPages = async (req, res) => {
     const connection = await getFbConnectionByCompanyId(company.id);
     if (!connection?.access_token) {
       return res.status(400).json({ message: 'Facebook not connected' });
+    }
+    if (!connection?.fb_user_id) {
+      return res.status(400).json({ message: 'Facebook connection is incomplete' });
     }
 
     const pagesResponse = await axios.get(

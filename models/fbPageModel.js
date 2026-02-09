@@ -77,6 +77,7 @@ const getSavedFbPages = async (adminId) => {
     SELECT p.*
     FROM fb_pages p
     JOIN fb_connections c ON c.company_id = p.company_id
+      AND c.fb_user_id = p.fb_user_id
     WHERE c.admin_firebase_uid = ? AND c.status = 'active'
     ORDER BY p.updated_at DESC
     `,
@@ -92,7 +93,9 @@ const getSavedFbPageByPageId = async (pageId) => {
       p.*,
       c.admin_firebase_uid AS admin_id
     FROM fb_pages p
-    LEFT JOIN fb_connections c ON c.company_id = p.company_id AND c.status = 'active'
+    LEFT JOIN fb_connections c ON c.company_id = p.company_id
+      AND c.fb_user_id = p.fb_user_id
+      AND c.status = 'active'
     WHERE p.page_id = ?
     ORDER BY p.updated_at DESC, c.updated_at DESC
     LIMIT 1
@@ -109,7 +112,9 @@ const getSavedFbPagesByPageId = async (pageId) => {
       p.*,
       c.admin_firebase_uid AS admin_id
     FROM fb_pages p
-    LEFT JOIN fb_connections c ON c.company_id = p.company_id AND c.status = 'active'
+    LEFT JOIN fb_connections c ON c.company_id = p.company_id
+      AND c.fb_user_id = p.fb_user_id
+      AND c.status = 'active'
     WHERE p.page_id = ?
     ORDER BY p.updated_at DESC, c.updated_at DESC
     `,

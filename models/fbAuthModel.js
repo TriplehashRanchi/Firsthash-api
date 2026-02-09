@@ -37,6 +37,9 @@ const upsertFbConnection = async ({
 
 const upsertFbPages = async (company_id, fb_user_id, pages = []) => {
   if (!Array.isArray(pages) || pages.length === 0) return;
+  if (!fb_user_id) {
+    throw new Error('fb_user_id is required to save Facebook pages');
+  }
 
   const query = `
     INSERT INTO fb_pages
@@ -121,6 +124,7 @@ const getFbPageCandidatesByPageId = async (page_id) => {
     FROM fb_pages p
     LEFT JOIN fb_connections c
       ON c.company_id = p.company_id
+      AND c.fb_user_id = p.fb_user_id
       AND c.status = 'active'
     WHERE p.page_id = ?
     ORDER BY p.updated_at DESC, c.updated_at DESC
