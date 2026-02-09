@@ -28,7 +28,7 @@ exports.createTask = async (taskData) => {
             `INSERT INTO tasks (
                 id, company_id, title, description, due_date, priority,
                 project_id, deliverable_id, deliverable_2_id, parent_task_id, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'to_do')`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'to_do')`, // in that i remove one ? for deliverables, of assign task section
             [
                 taskId,
                 company_id,
