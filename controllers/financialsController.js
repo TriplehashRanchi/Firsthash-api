@@ -1,5 +1,4 @@
 // controllers/financialsController.js
-const puppeteer = require('puppeteer');
 const ejs = require('ejs');
 const path = require('path');
 const fs = require('fs');
@@ -10,6 +9,7 @@ const projectModel = require('../models/projectModel');
 const companyModel = require('../models/companyModel');
 const financialsModel = require('../models/financialsModel');
 const { sendPaidWhatsAppConfirmation } = require('../utils/sendAiSensyMessage');
+const { renderHtmlToPdf } = require('../utils/pdfRenderer');
 
 exports.generateBill = async (req, res) => {
   try {
@@ -109,19 +109,15 @@ exports.generateBill = async (req, res) => {
     const fileName = `financials-${projectId}-${uuidv4()}.pdf`;
     const filePath = path.join(uploadsDir, fileName);
 
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox'],
+    await renderHtmlToPdf({
+      html,
+      filePath,
+      pdfOptions: {
+        format: 'A4',
+        printBackground: true,
+        margin: { top: '0.2in', bottom: '0.2in', left: '0.3in', right: '0.3in' },
+      },
     });
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    await page.pdf({
-      path: filePath,
-      format: 'A4',
-      printBackground: true,
-      margin: { top: '0.2in', bottom: '0.2in', left: '0.3in', right: '0.3in' },
-    });
-    await browser.close();
 
     const fileUrl = `${req.protocol}://${req.get('host')}/uploads/financials/${fileName}`;
 
@@ -223,11 +219,11 @@ exports.markPaymentAsPaid = async (req, res) => {
     const fileName = `financials-paid-${projectId}-${uuidv4()}.pdf`;
     const filePath = path.join(uploadsDir, fileName);
 
-    const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    await page.pdf({ path: filePath, format: 'A4', printBackground: true });
-    await browser.close();
+    await renderHtmlToPdf({
+      html,
+      filePath,
+      pdfOptions: { format: 'A4', printBackground: true },
+    });
 
     const newFileUrl = `${req.protocol}://${req.get('host')}/uploads/financials/${fileName}`;
 

@@ -1,10 +1,10 @@
 // File: controllers/quotationController.js
 
-const puppeteer = require('puppeteer');
 const ejs = require('ejs');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
+const { renderHtmlToPdf } = require('../utils/pdfRenderer');
 
 // Import all necessary models
 const projectModel = require('../models/projectModel');
@@ -76,29 +76,20 @@ exports.generateQuotation = async (req, res) => {
         const quoteFilePath = path.join(quoteDirectory, quoteFileName);
 
         // 5. Use Puppeteer to "Print" the HTML to a PDF
-        const browser = await puppeteer.launch({ 
-            headless: true, // Use 'new' in future Puppeteer versions
-            args: ['--no-sandbox', '--disable-setuid-sandbox'] // Important for running in Docker/Linux
-        });
-        const page = await browser.newPage();
-        
-        // Tell Puppeteer to load our rendered HTML
-        await page.setContent(html, { waitUntil: 'networkidle0' }); // Waits for network calls like images/Tailwind to finish
-        
-        // Generate the PDF from the page content
-        await page.pdf({
-            path: quoteFilePath,
-            format: 'A4',
-            printBackground: true,
-            margin: {
-                top: '0.1in',
-                right: '0.1in',
-                bottom: '0.1in',
-                left: '0.1in'
+        await renderHtmlToPdf({
+            html,
+            filePath: quoteFilePath,
+            pdfOptions: {
+                format: 'A4',
+                printBackground: true,
+                margin: {
+                    top: '0.1in',
+                    right: '0.1in',
+                    bottom: '0.1in',
+                    left: '0.1in'
+                }
             }
         });
-
-        await browser.close();
 
         // 6. Save a reference of the generated quotation to our database
         const fileUrl = `${req.protocol}://${req.get('host')}/uploads/quotations/${quoteFileName}`;
