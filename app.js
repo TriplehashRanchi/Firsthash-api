@@ -25,6 +25,7 @@ const expenseRoutes = require('./routes/expenseRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const quotationRoutes = require('./routes/quotationRoutes'); // <-- ADD THIS IMPORT
 const financeRoutes = require('./routes/financialRoutes');
+const billingRoutes = require('./routes/billingRoutes');
 const employeeRoutes = require('./routes/employeeRoutes');
 const selfRoutes = require('./routes/selfRoutes');
 const leadRoutes = require('./routes/leadRoutes');
@@ -62,6 +63,7 @@ app.use('/api/shoots', shootRoutes);
 app.use('/api/projects/:projectId/expenses', expenseRoutes);
 app.use('/api/projects/:projectId/quotations', quotationRoutes);
 app.use('/api/finance', financeRoutes);
+app.use('/api/billing', billingRoutes);
 app.use('/api/employee', employeeRoutes);
 app.use('/api/self', selfRoutes);
 app.use('/api', leadRoutes);
