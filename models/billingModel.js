@@ -329,8 +329,39 @@ exports.getBillingInvoiceById = async (companyId, invoiceId) => {
 
   if (!rows.length) return null;
 
-  return {
+  const invoice = {
     ...rows[0],
     status: normalizeStatusValue(rows[0].status),
+  };
+
+  const [historyRows] = await db.query(
+    `
+    SELECT
+      rp.id,
+      rp.project_id AS projectId,
+      rp.amount,
+      rp.description,
+      rp.file_url AS fileUrl,
+      rp.status,
+      rp.is_gst AS isGst,
+      rp.date_received AS dateReceived,
+      rp.created_at AS createdAt
+    FROM received_payments rp
+    INNER JOIN projects p ON p.id = rp.project_id
+    WHERE p.company_id = ?
+      AND rp.project_id = ?
+      AND COALESCE(rp.type, 'received') = 'received'
+    ORDER BY COALESCE(rp.date_received, rp.created_at) DESC, rp.id DESC
+    `,
+    [companyId, invoice.projectId]
+  );
+
+  return {
+    ...invoice,
+    history: historyRows.map((row) => ({
+      ...row,
+      status: normalizeStatusValue(row.status),
+      isCurrent: String(row.id) === String(invoiceId),
+    })),
   };
 };
