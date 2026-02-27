@@ -228,8 +228,42 @@ async function editEmployee(uid, updates) {
 }
 
 async function removeEmployee(uid) {
-  await pool.execute(`DELETE FROM employee_role_assignments WHERE firebase_uid = ?`, [uid]);
-  await pool.execute(`DELETE FROM employees WHERE firebase_uid = ?`, [uid]);
+  const conn = await pool.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    // 1️⃣ Delete attendance records first (child table)
+    await conn.execute(
+      `DELETE FROM attendance WHERE firebase_uid = ?`,
+      [uid]
+    );
+
+    // 2️⃣ Delete role assignments
+    await conn.execute(
+      `DELETE FROM employee_role_assignments WHERE firebase_uid = ?`,
+      [uid]
+    );
+
+    // 3️⃣ Delete employee
+    const [result] = await conn.execute(
+      `DELETE FROM employees WHERE firebase_uid = ?`,
+      [uid]
+    );
+
+    if (result.affectedRows === 0) {
+      throw new Error("Employee not found");
+    }
+
+    await conn.commit();
+    return true;
+
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 }
 
 // memberModels.js
