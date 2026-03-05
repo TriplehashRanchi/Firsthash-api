@@ -495,16 +495,33 @@ exports.fetchDataForAllocationCalendar = async (company_id) => {
         [company_id]
     );
     // --- END: MODIFICATION 2 ---
+
+    const slotWindowsQuery = db.query(`
+        SELECT
+            tas.shoot_id,
+            tas.service_name,
+            MIN(tas.start_at) AS start_at,
+            MAX(tas.end_at) AS end_at
+        FROM team_assignment_slots tas
+        JOIN shoots s ON s.id = tas.shoot_id
+        JOIN projects p ON p.id = s.project_id
+        WHERE tas.company_id = ?
+          AND p.company_id = ?
+          AND tas.status = 'booked'
+          AND p.status = 'ongoing'
+        GROUP BY tas.shoot_id, tas.service_name
+    `, [company_id, company_id]);
     
     // 2. Execute all queries at once.
-    const [[shoots], [allocations], [teamMembers], [roleRows]] = await Promise.all([
-        shootsQuery, allocationsQuery, teamMembersQuery, rolesQuery
+    const [[shoots], [allocations], [teamMembers], [roleRows], [slotWindows]] = await Promise.all([
+        shootsQuery, allocationsQuery, teamMembersQuery, rolesQuery, slotWindowsQuery
     ]);
     
     // 3. Process the data into the final structure (NO CHANGE HERE)
     const shootsById = shoots.reduce((acc, shoot) => {
         acc[shoot.id] = {
             id: shoot.id, eventDate: shoot.date, clientName: shoot.clientName,
+            eventTime: shoot.time,
             functionName: shoot.title, location: shoot.city, allocations: {}
         };
         return acc;
@@ -519,6 +536,16 @@ exports.fetchDataForAllocationCalendar = async (company_id) => {
             if (alloc.employee_firebase_uid && !shootsById[alloc.shoot_id].allocations[service].assigned.includes(alloc.employee_firebase_uid)) {
                 shootsById[alloc.shoot_id].allocations[service].assigned.push(alloc.employee_firebase_uid);
             }
+        }
+    }
+
+    for (const slot of slotWindows) {
+        if (
+            shootsById[slot.shoot_id] &&
+            shootsById[slot.shoot_id].allocations[slot.service_name]
+        ) {
+            shootsById[slot.shoot_id].allocations[slot.service_name].startAt = slot.start_at;
+            shootsById[slot.shoot_id].allocations[slot.service_name].endAt = slot.end_at;
         }
     }
     
