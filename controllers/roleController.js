@@ -63,11 +63,6 @@ exports.updateRole = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // ✅ SERVER-SIDE PROTECTION
-    if (parseInt(id, 10) <= PREDEFINED_ROLE_IDS_MAX) {
-      return res.status(403).json({ error: 'Predefined roles cannot be modified.' });
-    }
-
     const { type_name, role_code } = req.body;
     const updated = await updateRole(id, { type_name, role_code });
     if (!updated) {
@@ -84,11 +79,6 @@ exports.updateRole = async (req, res) => {
 exports.deleteRole = async (req, res) => {
   try {
     const { id } = req.params;
-
-    // ✅ SERVER-SIDE PROTECTION
-    if (parseInt(id, 10) <= PREDEFINED_ROLE_IDS_MAX) {
-      return res.status(403).json({ error: 'Predefined roles cannot be deleted.' });
-    }
 
     await deleteRole(id);
     res.status(204).end();
