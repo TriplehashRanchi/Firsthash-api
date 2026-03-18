@@ -148,3 +148,18 @@ exports.updateDeliverable2DueDate = async ({
 
   return deliverable2;
 };
+
+
+exports.deleteAllDeliverables2 = async ({ companyId, projectId }) => {
+  await db.query(
+    `
+    DELETE d, t
+    FROM deliverables_2 d
+    LEFT JOIN tasks t ON t.deliverable_2_id = d.id
+    JOIN projects p ON p.id = d.project_id
+    WHERE d.project_id = ? AND p.company_id = ?
+    `,
+    [projectId, companyId]
+  );
+};
+

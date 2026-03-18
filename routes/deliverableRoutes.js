@@ -25,6 +25,13 @@ router.post(
   taskBundleController.importBundleToDeliverable
 );
 
+router.delete(
+  '/:projectId/deliverables-2',
+  verifyToken,
+  requireAdminOrManagerWithActiveCompany,
+  require('../controllers/deliverable2Controller').deleteAllDeliverables2
+);
+
 router.get('/', verifyToken, requireAdminOrManagerWithActiveCompany, getDeliverables);
 
 module.exports = router;

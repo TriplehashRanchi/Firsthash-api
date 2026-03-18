@@ -57,3 +57,18 @@ exports.updateDeliverable2DueDate = async (req, res) => {
     res.status(500).json({ error: error.sqlMessage || 'Server error while updating due date.' });
   }
 };
+
+exports.deleteAllDeliverables2 = async (req, res) => {
+  try {
+    const companyId = req.company.id;
+    const projectId = req.params.projectId;
+
+    await deliverable2Model.deleteAllDeliverables2({ companyId, projectId });
+
+    res.json({ success: true, message: 'All deliverables deleted' });
+  } catch (error) {
+    console.error('❌ Delete all failed:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
