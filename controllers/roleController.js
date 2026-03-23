@@ -20,7 +20,7 @@ const PREDEFINED_ROLE_IDS_MAX = 13;
 // GET /api/roles?company_id=<uuid>
 exports.listRoles = async (req, res) => {
   try {
-    const companyId = req.query.company_id || '00000000-0000-0000-0000-000000000000';
+    const companyId = req.query.company_id || req.company?.id || req.user?.company_id || '00000000-0000-0000-0000-000000000000';
     const roles = await getAllRoles(companyId);
     res.json(roles);
   } catch (err) {
