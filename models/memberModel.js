@@ -278,6 +278,17 @@ async function fetchAttendanceForUid(uid) {
   return rows;
 }
 
+async function fetchAttendanceForUidAndDate(uid, date) {
+  const [[row]] = await pool.execute(
+    `SELECT a_id, firebase_uid, a_date, in_time, out_time, a_status
+     FROM attendance
+     WHERE firebase_uid = ? AND a_date = ?
+     LIMIT 1`,
+    [uid, date]
+  );
+  return row || null;
+}
+
 async function upsertAttendance(records) {
     const conn = await pool.getConnection();
     try {
@@ -308,6 +319,26 @@ async function upsertAttendance(records) {
     } finally {
         conn.release();
     }
+}
+
+async function upsertAttendanceRecord(record) {
+  await pool.execute(
+    `
+      INSERT INTO attendance (firebase_uid, a_date, in_time, out_time, a_status)
+      VALUES (?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        in_time = VALUES(in_time),
+        out_time = VALUES(out_time),
+        a_status = VALUES(a_status)
+    `,
+    [
+      record.firebase_uid,
+      record.a_date,
+      record.in_time || null,
+      record.out_time || null,
+      record.a_status,
+    ]
+  );
 }
 
 // ADD THIS NEW FUNCTION FOR THE DASHBOARD
@@ -589,11 +620,13 @@ module.exports = {
   editEmployee,
   removeEmployee,
   fetchAttendanceForUid,
+  fetchAttendanceForUidAndDate,
   removeRoleAssignments,
   fetchPaymentDetails,
   upsertPaymentDetails,
   fetchAllAttendance,
   upsertAttendance,
+  upsertAttendanceRecord,
   updateEmployeeSalary,
   fetchCompanySalaries,
   updateMonthlySalaryRecord,

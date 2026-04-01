@@ -100,6 +100,31 @@ const requireManagerWithActiveCompany = async (req, res, next) => {
   next();
 };
 
+const requireEmployeeOrManagerWithActiveCompany = async (req, res, next) => {
+  const user = await getEmployeeByUID(req.firebase_uid);
+  if (!user || user.status !== 'active') {
+    return res.status(403).json({ error: 'Employee access denied: inactive user' });
+  }
+
+  if (![1, 2].includes(user.employee_type)) {
+    return res.status(403).json({ error: 'Access denied: only employees or managers can use this action' });
+  }
+
+  const company = await getCompanyById(user.company_id);
+  const isExpired = !company?.plan_expiry || new Date(company.plan_expiry) < new Date();
+
+  if (!company || isExpired) {
+    return res.status(403).json({ error: 'Company plan is inactive or expired' });
+  }
+
+  req.user = {
+    ...user,
+    role: user.employee_type === 2 ? 'manager' : 'employee'
+  };
+  req.company = company;
+  next();
+};
+
 const requireAdminOrManagerWithActiveCompany = async (req, res, next) => {
   const admin = await getAdminByUID(req.firebase_uid);
   if (admin && admin.status === 'active') {
@@ -132,5 +157,6 @@ module.exports = {
   requireAdminWithActiveCompany,
   requireEmployeeWithActiveCompany,
   requireManagerWithActiveCompany,
+  requireEmployeeOrManagerWithActiveCompany,
   requireAdminOrManagerWithActiveCompany
 };
