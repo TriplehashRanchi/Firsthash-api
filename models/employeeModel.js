@@ -44,13 +44,16 @@ exports.getTasksAssignedToUser = async (companyId, firebaseUid) => {
       t.status,
       t.priority,
       t.due_date,
-      t.project_id,
+      COALESCE(t.project_id, d.project_id, d2.project_id) AS project_id,
       t.deliverable_id,
+      t.deliverable_2_id,
       p.name AS project_name,
       t.voice_note_url  -- This line is added
     FROM tasks t
     INNER JOIN task_assignees ta ON t.id = ta.task_id
-    LEFT JOIN projects p ON p.id = t.project_id
+    LEFT JOIN deliverables d ON d.id = t.deliverable_id
+    LEFT JOIN deliverables_2 d2 ON d2.id = t.deliverable_2_id
+    LEFT JOIN projects p ON p.id = COALESCE(t.project_id, d.project_id, d2.project_id)
     WHERE t.company_id = ? AND ta.employee_firebase_uid = ?
     GROUP BY t.id
     ORDER BY t.created_at DESC
@@ -79,10 +82,14 @@ exports.getProjectsAssignedToUser = async (companyId, firebaseUid) => {
     WHERE p.company_id = ?
       AND p.id IN (
         -- via tasks
-        SELECT DISTINCT t.project_id
+        SELECT DISTINCT COALESCE(t.project_id, d.project_id, d2.project_id) AS project_id
         FROM tasks t
         JOIN task_assignees ta ON ta.task_id = t.id
-        WHERE t.company_id = ? AND ta.employee_firebase_uid = ?
+        LEFT JOIN deliverables d ON d.id = t.deliverable_id
+        LEFT JOIN deliverables_2 d2 ON d2.id = t.deliverable_2_id
+        WHERE t.company_id = ? 
+          AND ta.employee_firebase_uid = ?
+          AND COALESCE(t.project_id, d.project_id, d2.project_id) IS NOT NULL
         UNION
         -- via shoot assignments
         SELECT DISTINCT s.project_id
