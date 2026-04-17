@@ -68,7 +68,7 @@ async function getRevenueSummary(companyId, filters) {
 
 async function getExpenseSummary(companyId, filters) {
   const projectDate = buildDateClause('DATE(e.expense_date)', filters);
-  const personalDate = buildDateClause('DATE(pe.purchase_date)', filters);
+  const personalDate = buildDateClause('DATE(pe.expense_date)', filters);
   const salaryDate = buildDateClause(
     `STR_TO_DATE(CONCAT(es.period_year, '-', LPAD(es.period_month, 2, '0'), '-01'), '%Y-%m-%d')`,
     filters
@@ -87,9 +87,10 @@ async function getExpenseSummary(companyId, filters) {
     ),
     db.query(
       `
-      SELECT COALESCE(SUM(pe.rupees), 0) AS totalPersonalExpense
+      SELECT COALESCE(SUM(pe.total_amount), 0) AS totalPersonalExpense
       FROM personal_expense pe
       WHERE pe.company_id = ?
+        AND pe.deleted_at IS NULL
       ${personalDate.sql}
       `,
       [companyId, ...personalDate.params]
@@ -172,15 +173,16 @@ async function getTrendRows(companyId, filters) {
     [companyId, ...projectDate.params]
   );
 
-  const personalPeriod = getPeriodSelect(granularity, 'DATE(pe.purchase_date)');
-  const personalDate = buildDateClause('DATE(pe.purchase_date)', filters);
+  const personalPeriod = getPeriodSelect(granularity, 'DATE(pe.expense_date)');
+  const personalDate = buildDateClause('DATE(pe.expense_date)', filters);
   const [personalExpenseRows] = await db.query(
     `
     SELECT
       ${personalPeriod.key} AS periodKey,
-      COALESCE(SUM(pe.rupees), 0) AS personalExpense
+      COALESCE(SUM(pe.total_amount), 0) AS personalExpense
     FROM personal_expense pe
     WHERE pe.company_id = ?
+      AND pe.deleted_at IS NULL
     ${personalDate.sql}
     GROUP BY periodKey
     ORDER BY periodKey ASC

@@ -45,8 +45,28 @@ const storage = multer.diskStorage({
     }
 });
 
+const ALLOWED_MIME_TYPES = new Set([
+    'application/pdf',
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+]);
+
 // Initialize Multer with our storage configuration
-const upload = multer({ storage: storage });
+const upload = multer({
+    storage: storage,
+    limits: {
+        fileSize: 10 * 1024 * 1024,
+    },
+    fileFilter: (req, file, cb) => {
+        if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
+            cb(new Error('Only PDF, JPG, PNG, and WEBP files are allowed.'));
+            return;
+        }
+
+        cb(null, true);
+    },
+});
 
 // --- Define the API Route ---
 // @route   POST /api/uploads

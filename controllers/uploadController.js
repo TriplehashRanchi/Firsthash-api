@@ -10,6 +10,8 @@ exports.handleUpload = (req, res) => {
         message: 'File uploaded successfully!',
         url: fileUrl,
         fileName: req.file.filename,
+        originalFileName: req.file.originalname,
+        mimeType: req.file.mimetype,
         sizeInBytes: req.file.size
     });
 };
