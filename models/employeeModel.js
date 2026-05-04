@@ -72,13 +72,41 @@ exports.getProjectsAssignedToUser = async (companyId, firebaseUid) => {
       p.name,
       p.status,
       c.name AS clientName,
-      (SELECT MIN(s.date) FROM shoots s WHERE s.project_id = p.id) AS minDate,
-      (SELECT MAX(s.date) FROM shoots s WHERE s.project_id = p.id) AS maxDate,
-      (SELECT COUNT(*) FROM shoots s WHERE s.project_id = p.id) AS shoots,
+      COALESCE(ad.assignedMinDate, pd.projectMinDate) AS minDate,
+      COALESCE(ad.assignedMaxDate, pd.projectMaxDate) AS maxDate,
+      ad.nextAssignedDate,
+      CASE
+        WHEN ad.assignedMinDate IS NOT NULL THEN ad.nextAssignedDate
+        ELSE pd.nextProjectDate
+      END AS nextDate,
+      COALESCE(ad.assignedShoots, 0) AS assignedShoots,
+      COALESCE(pd.shoots, 0) AS shoots,
       (SELECT COUNT(*) FROM deliverables d WHERE d.project_id = p.id) AS deliverablesTotal,
       (SELECT COUNT(*) FROM deliverables d WHERE d.project_id = p.id AND d.status = 'completed') AS deliverablesCompleted
     FROM projects p
     JOIN clients c ON c.id = p.client_id
+    LEFT JOIN (
+      SELECT
+        s.project_id,
+        MIN(s.date) AS assignedMinDate,
+        MAX(s.date) AS assignedMaxDate,
+        MIN(CASE WHEN s.date >= CURDATE() THEN s.date END) AS nextAssignedDate,
+        COUNT(DISTINCT s.id) AS assignedShoots
+      FROM shoot_assignments sa
+      JOIN shoots s ON s.id = sa.shoot_id
+      WHERE sa.employee_firebase_uid = ?
+      GROUP BY s.project_id
+    ) ad ON ad.project_id = p.id
+    LEFT JOIN (
+      SELECT
+        s.project_id,
+        MIN(s.date) AS projectMinDate,
+        MAX(s.date) AS projectMaxDate,
+        MIN(CASE WHEN s.date >= CURDATE() THEN s.date END) AS nextProjectDate,
+        COUNT(*) AS shoots
+      FROM shoots s
+      GROUP BY s.project_id
+    ) pd ON pd.project_id = p.id
     WHERE p.company_id = ?
       AND p.id IN (
         -- via tasks
@@ -100,7 +128,7 @@ exports.getProjectsAssignedToUser = async (companyId, firebaseUid) => {
       )
     ORDER BY p.created_at DESC
   `;
-  const params = [companyId, companyId, firebaseUid, companyId, firebaseUid];
+  const params = [firebaseUid, companyId, companyId, firebaseUid, companyId, firebaseUid];
   const [rows] = await db.query(sql, params);
   return rows;
 };
@@ -111,8 +139,12 @@ exports.getProjectsAssignedToUser = async (companyId, firebaseUid) => {
 exports.isEmployeeAssignedToProject = async (companyId, projectId, firebaseUid) => {
   const sql = `
     SELECT 1 FROM tasks t
+      LEFT JOIN deliverables d ON d.id = t.deliverable_id
+      LEFT JOIN deliverables_2 d2 ON d2.id = t.deliverable_2_id
       JOIN task_assignees ta ON ta.task_id = t.id
-      WHERE t.company_id = ? AND t.project_id = ? AND ta.employee_firebase_uid = ?
+      WHERE t.company_id = ?
+        AND COALESCE(t.project_id, d.project_id, d2.project_id) = ?
+        AND ta.employee_firebase_uid = ?
     UNION
     SELECT 1 FROM shoot_assignments sa
       JOIN shoots s ON s.id = sa.shoot_id
@@ -128,7 +160,13 @@ exports.isEmployeeAssignedToProject = async (companyId, projectId, firebaseUid) 
 /**
  * Lean project details for employee view.
  */
-exports.getProjectDetailsView = async (companyId, projectId) => {
+exports.getProjectDetailsView = async (companyId, projectId, firebaseUid) => {
+  const [clientColumnRows] = await db.query('SHOW COLUMNS FROM clients');
+  const clientColumns = new Set(clientColumnRows.map((column) => column.Field));
+  const clientField = (field, alias) => (
+    clientColumns.has(field) ? `c.${field} AS ${alias}` : `NULL AS ${alias}`
+  );
+
   // Project + client
   const [projRows] = await db.query(
     `
@@ -139,7 +177,12 @@ exports.getProjectDetailsView = async (companyId, projectId) => {
       p.package_cost                 AS packageCost,
       p.additional_deliverables_cost AS additionalCost,
       p.total_cost                   AS totalCost,
-      c.name                         AS clientName
+      c.name                         AS clientName,
+      ${clientField('phone', 'clientPhone')},
+      ${clientField('email', 'clientEmail')},
+      ${clientField('relation', 'clientRelation')},
+      ${clientField('address', 'clientAddress')},
+      ${clientField('notes', 'clientNotes')}
     FROM projects p
     JOIN clients c ON c.id = p.client_id
     WHERE p.id = ? AND p.company_id = ?
@@ -151,15 +194,29 @@ exports.getProjectDetailsView = async (companyId, projectId) => {
   const proj = projRows[0];
   if (!proj) return null;
 
-  // Shoots
+  // Shoots/services assigned to this employee only.
   const [shootRows] = await db.query(
     `
-    SELECT id, title, date, time, city
-    FROM shoots
-    WHERE project_id = ?
-    ORDER BY date ASC, time ASC
+    SELECT
+      s.id,
+      s.title,
+      s.date,
+      s.time,
+      s.city,
+      COALESCE(ser.name, sa.service_name) AS service_name,
+      ss.quantity,
+      sa.employee_firebase_uid,
+      e.name AS employee_name
+    FROM shoot_assignments sa
+    JOIN shoots s ON s.id = sa.shoot_id
+    LEFT JOIN services ser ON ser.name = sa.service_name
+    LEFT JOIN shoot_services ss ON ss.shoot_id = s.id AND ss.service_id = ser.id
+    LEFT JOIN employees e ON sa.employee_firebase_uid = e.firebase_uid
+    WHERE s.project_id = ?
+      AND sa.employee_firebase_uid = ?
+    ORDER BY s.date ASC, s.time ASC
     `,
-    [projectId]
+    [projectId, firebaseUid]
   );
 
   // Deliverables
@@ -179,25 +236,74 @@ exports.getProjectDetailsView = async (companyId, projectId) => {
     [projectId]
   );
 
+  const [deliv2Rows] = await db.query(
+    `
+    SELECT
+      id,
+      title,
+      status,
+      due_date AS date,
+      created_at
+    FROM deliverables_2
+    WHERE project_id = ?
+    ORDER BY created_at ASC
+    `,
+    [projectId]
+  );
+
+  const shootsById = {};
+  for (const row of shootRows) {
+    if (!shootsById[row.id]) {
+      shootsById[row.id] = {
+        id: row.id,
+        title: row.title,
+        date: row.date,
+        time: row.time,
+        city: row.city,
+        selectedServices: {},
+        assignments: {},
+      };
+    }
+
+    if (row.service_name) {
+      shootsById[row.id].selectedServices[row.service_name] = Number(row.quantity || 1);
+      if (!shootsById[row.id].assignments[row.service_name]) {
+        shootsById[row.id].assignments[row.service_name] = [];
+      }
+    }
+
+    if (row.service_name && row.employee_name && !shootsById[row.id].assignments[row.service_name].includes(row.employee_name)) {
+      shootsById[row.id].assignments[row.service_name].push(row.employee_name);
+    }
+  }
+
   // Shape response
   return {
+    id: proj.id,
     projectName: proj.name,
     projectStatus: proj.status,
     projectPackageCost: Number(proj.packageCost || 0),
     deliverablesAdditionalCost: Number(proj.additionalCost || 0),
     overallTotalCost: Number(proj.totalCost || 0),
     clientName: proj.clientName,
+    clientPhone: proj.clientPhone,
+    clientEmail: proj.clientEmail,
+    clientRelation: proj.clientRelation,
+    clientAddress: proj.clientAddress,
+    clientNotes: proj.clientNotes,
+    clients: {
+      clientDetails: {
+        name: proj.clientName,
+        phone: proj.clientPhone,
+        email: proj.clientEmail,
+        relation: proj.clientRelation,
+        address: proj.clientAddress,
+        notes: proj.clientNotes,
+      },
+    },
 
     shoots: {
-      shootList: shootRows.map(s => ({
-        id: s.id,
-        title: s.title,
-        date: s.date,
-        time: s.time,
-        city: s.city,
-        selectedServices: {},
-        assignments: {},
-      })),
+      shootList: Object.values(shootsById),
     },
 
     deliverables: {
@@ -207,6 +313,14 @@ exports.getProjectDetailsView = async (companyId, projectId) => {
         status: d.status,
         is_additional_charge: !!d.is_additional_charge,
         additional_charge_amount: Number(d.additional_charge_amount || 0),
+        date: d.date,
+      })),
+    },
+    deliverables2: {
+      deliverableItems: deliv2Rows.map(d => ({
+        id: d.id,
+        title: d.title,
+        status: d.status,
         date: d.date,
       })),
     },

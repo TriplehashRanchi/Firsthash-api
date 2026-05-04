@@ -269,7 +269,17 @@ async function removeEmployee(uid) {
 // memberModels.js
 async function fetchAttendanceForUid(uid) {
   const [rows] = await pool.execute(
-    `SELECT a_id, firebase_uid, a_date, in_time, out_time, a_status
+    `SELECT
+       a_id,
+       firebase_uid,
+       a_date,
+       in_time,
+       out_time,
+       a_status,
+       latitude,
+       longitude,
+       distance_from_office_meters,
+       location_status
      FROM attendance
      WHERE firebase_uid = ?
      ORDER BY a_date DESC`, // Order by the correct column name
@@ -280,7 +290,17 @@ async function fetchAttendanceForUid(uid) {
 
 async function fetchAttendanceForUidAndDate(uid, date) {
   const [[row]] = await pool.execute(
-    `SELECT a_id, firebase_uid, a_date, in_time, out_time, a_status
+    `SELECT
+       a_id,
+       firebase_uid,
+       a_date,
+       in_time,
+       out_time,
+       a_status,
+       latitude,
+       longitude,
+       distance_from_office_meters,
+       location_status
      FROM attendance
      WHERE firebase_uid = ? AND a_date = ?
      LIMIT 1`,
@@ -324,12 +344,17 @@ async function upsertAttendance(records) {
 async function upsertAttendanceRecord(record) {
   await pool.execute(
     `
-      INSERT INTO attendance (firebase_uid, a_date, in_time, out_time, a_status)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO attendance
+        (firebase_uid, a_date, in_time, out_time, a_status, latitude, longitude, distance_from_office_meters, location_status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         in_time = VALUES(in_time),
         out_time = VALUES(out_time),
-        a_status = VALUES(a_status)
+        a_status = VALUES(a_status),
+        latitude = VALUES(latitude),
+        longitude = VALUES(longitude),
+        distance_from_office_meters = VALUES(distance_from_office_meters),
+        location_status = VALUES(location_status)
     `,
     [
       record.firebase_uid,
@@ -337,13 +362,33 @@ async function upsertAttendanceRecord(record) {
       record.in_time || null,
       record.out_time || null,
       record.a_status,
+      record.latitude ?? null,
+      record.longitude ?? null,
+      record.distance_from_office_meters ?? null,
+      record.location_status || 'inside_radius',
     ]
   );
 }
 
 // ADD THIS NEW FUNCTION FOR THE DASHBOARD
-async function fetchAllAttendance() {
-    const [rows] = await pool.execute('SELECT * FROM attendance ORDER BY a_date DESC');
+async function fetchAllAttendance(companyId) {
+    const [rows] = await pool.execute(
+      `
+        SELECT
+          a.*,
+          cl.location_name AS office_location_name,
+          cl.address AS office_location_address,
+          cl.radius_meters AS office_radius_meters
+        FROM attendance a
+        JOIN employees e ON e.firebase_uid = a.firebase_uid
+        LEFT JOIN company_locations cl
+          ON cl.company_id = e.company_id
+          AND cl.is_active = 1
+        WHERE e.company_id = ?
+        ORDER BY a.a_date DESC
+      `,
+      [companyId]
+    );
     return rows;
 }
 

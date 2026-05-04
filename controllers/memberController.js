@@ -268,7 +268,7 @@ exports.createOrUpdateAttendance = async (req, res) => {
 // Handles GET /api/members/attendance
 exports.getAllAttendance = async (req, res) => {
     try {
-        const records = await fetchAllAttendance();
+        const records = await fetchAllAttendance(req.company.id);
         res.json(records);
     } catch (err) {
         console.error("getAllAttendance error:", err);

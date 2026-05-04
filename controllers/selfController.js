@@ -7,6 +7,7 @@ const {
   fetchAttendanceForUidAndDate,
   upsertAttendanceRecord
 } = require('../models/memberModel');
+const { getActiveCompanyLocation } = require('../models/companyLocationModel');
 
 const ATTENDANCE_TIMEZONE = process.env.ATTENDANCE_TIMEZONE || 'Asia/Kolkata';
 
@@ -51,6 +52,29 @@ function normalizeAttendanceTime(rawTime) {
 function timeToSeconds(time) {
   const [hours, minutes, seconds] = time.split(':').map(Number);
   return (hours * 3600) + (minutes * 60) + seconds;
+}
+
+function normalizeCoordinate(value, min, max) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || numberValue < min || numberValue > max) {
+    return null;
+  }
+
+  return numberValue;
+}
+
+function calculateDistanceMeters(origin, destination) {
+  const earthRadiusMeters = 6371000;
+  const toRadians = (degrees) => degrees * (Math.PI / 180);
+  const lat1 = toRadians(Number(origin.latitude));
+  const lat2 = toRadians(Number(destination.latitude));
+  const deltaLat = toRadians(Number(destination.latitude) - Number(origin.latitude));
+  const deltaLng = toRadians(Number(destination.longitude) - Number(origin.longitude));
+
+  const a = Math.sin(deltaLat / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusMeters * c;
 }
 /**
  * GET /api/self/profile
@@ -214,7 +238,7 @@ exports.markMyAttendanceManually = async (req, res) => {
   try {
     const employeeUid = req.user?.firebase_uid || req.firebase_uid;
     const employeeType = req.user?.employee_type;
-    const { mark_type, time } = req.body || {};
+    const { mark_type, time, latitude, longitude } = req.body || {};
 
     if (!employeeUid) {
       return res.status(401).json({ error: 'Authentication details not found.' });
@@ -233,8 +257,29 @@ exports.markMyAttendanceManually = async (req, res) => {
       return res.status(400).json({ error: 'time must be in HH:MM or HH:MM:SS format.' });
     }
 
+    const isClockIn = mark_type === 'in_time';
+    const normalizedLatitude = isClockIn ? normalizeCoordinate(latitude, -90, 90) : null;
+    const normalizedLongitude = isClockIn ? normalizeCoordinate(longitude, -180, 180) : null;
+    if (isClockIn && (normalizedLatitude === null || normalizedLongitude === null)) {
+      return res.status(400).json({ error: 'Location is required to mark attendance.' });
+    }
+
     const today = getTodayDateInTimezone();
     const existingRecord = await fetchAttendanceForUidAndDate(employeeUid, today);
+    const companyLocation = isClockIn && req.company?.id
+      ? await getActiveCompanyLocation(req.company.id)
+      : null;
+
+    const distanceFromOffice = companyLocation
+      ? calculateDistanceMeters(
+        { latitude: normalizedLatitude, longitude: normalizedLongitude },
+        { latitude: companyLocation.latitude, longitude: companyLocation.longitude }
+      )
+      : null;
+
+    const locationStatus = companyLocation && distanceFromOffice > Number(companyLocation.radius_meters || 1000)
+      ? 'outside_radius'
+      : 'inside_radius';
 
     if (mark_type === 'in_time') {
       if (existingRecord?.in_time) {
@@ -265,7 +310,13 @@ exports.markMyAttendanceManually = async (req, res) => {
       a_date: today,
       in_time: mark_type === 'in_time' ? normalizedTime : existingRecord?.in_time || null,
       out_time: mark_type === 'out_time' ? normalizedTime : existingRecord?.out_time || null,
-      a_status: 1
+      a_status: 1,
+      latitude: isClockIn ? normalizedLatitude : existingRecord?.latitude ?? null,
+      longitude: isClockIn ? normalizedLongitude : existingRecord?.longitude ?? null,
+      distance_from_office_meters: isClockIn
+        ? (distanceFromOffice === null ? null : Number(distanceFromOffice.toFixed(2)))
+        : existingRecord?.distance_from_office_meters ?? null,
+      location_status: isClockIn ? locationStatus : existingRecord?.location_status || 'inside_radius'
     });
 
     const savedRecord = await fetchAttendanceForUidAndDate(employeeUid, today);

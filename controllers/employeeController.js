@@ -47,7 +47,7 @@ exports.viewProjectById = async (req, res) => {
     const allowed = await model.isEmployeeAssignedToProject(company_id, projectId, uid);
     if (!allowed) return res.status(403).json({ error: 'Not allowed to view this project.' });
 
-    const data = await model.getProjectDetailsView(company_id, projectId);
+    const data = await model.getProjectDetailsView(company_id, projectId, uid);
     if (!data) return res.status(404).json({ error: 'Project not found.' });
 
     return res.json(data);
