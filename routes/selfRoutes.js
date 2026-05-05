@@ -9,6 +9,7 @@ const {
   updateMyProfile,
   updateMyPaymentDetails,
   getMyAttendance,
+  getMyLocationCheck,
   markMyAttendanceManually
 } = require('../controllers/selfController');
 
@@ -21,10 +22,9 @@ router.get('/payment-details', getMyPaymentDetails);
 router.put('/profile', updateMyProfile);
 router.put('/payment-details', updateMyPaymentDetails);
 
-
-// ✅ THIS IS THE FIX: Your new route for attendance.
-// It does NOT use the faulty verifyToken middleware because the controller handles everything itself.
+// Attendance routes use req.firebase_uid from verifyToken.
 router.get('/attendance', getMyAttendance);
+router.get('/location-check', requireEmployeeOrManagerWithActiveCompany, getMyLocationCheck);
 router.post('/attendance/manual', requireEmployeeOrManagerWithActiveCompany, markMyAttendanceManually);
 
 

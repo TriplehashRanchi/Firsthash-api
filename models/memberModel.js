@@ -314,12 +314,17 @@ async function upsertAttendance(records) {
     try {
         await conn.beginTransaction();
         const sql = `
-            INSERT INTO attendance (firebase_uid, a_date, in_time, out_time, a_status)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO attendance
+                (firebase_uid, a_date, in_time, out_time, a_status, latitude, longitude, distance_from_office_meters, location_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 in_time = VALUES(in_time),
                 out_time = VALUES(out_time),
-                a_status = VALUES(a_status)
+                a_status = VALUES(a_status),
+                latitude = COALESCE(VALUES(latitude), latitude),
+                longitude = COALESCE(VALUES(longitude), longitude),
+                distance_from_office_meters = COALESCE(VALUES(distance_from_office_meters), distance_from_office_meters),
+                location_status = COALESCE(VALUES(location_status), location_status)
         `;
         for (const rec of records) {
             await conn.execute(sql, [
@@ -328,6 +333,10 @@ async function upsertAttendance(records) {
                 rec.in_time || null,
                 rec.out_time || null,
                 rec.a_status,
+                rec.latitude ?? null,
+                rec.longitude ?? null,
+                rec.distance_from_office_meters ?? null,
+                rec.location_status ?? null,
             ]);
         }
         await conn.commit();

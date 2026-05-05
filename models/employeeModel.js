@@ -430,7 +430,7 @@ exports.updateTaskStatusAsEmployee = async (companyId, firebaseUid, taskId, newS
     );
 
     // Step 4: If this is a custom status, add it to the reusable list (ignores duplicates)
-    const predefined = ['to_do', 'in_progress', 'completed', 'rejected', 'finalize'];
+    const predefined = ['to_do', 'ongoing', 'in_progress', 'completed', 'complete', 'not_working', 'overdue', 'rejected', 'finalize'];
     if (!predefined.includes(newStatus.toLowerCase().replace(' ', '_'))) {
         await connection.query(
             `INSERT IGNORE INTO custom_task_statuses (company_id, status_text) VALUES (?, ?)`,

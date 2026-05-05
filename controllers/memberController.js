@@ -36,9 +36,33 @@ const {
 const {
   sendWhatsAppsAccountActivated,
 } = require("../utils/sendAiSensyMessage");
+const { getActiveCompanyLocation } = require('../models/companyLocationModel');
 
 
 const GLOBAL_COMPANY_ID = "00000000-0000-0000-0000-000000000000";
+
+function normalizeCoordinate(value, min, max) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || numberValue < min || numberValue > max) {
+    return null;
+  }
+
+  return numberValue;
+}
+
+function calculateDistanceMeters(origin, destination) {
+  const earthRadiusMeters = 6371000;
+  const toRadians = (degrees) => degrees * (Math.PI / 180);
+  const lat1 = toRadians(Number(origin.latitude));
+  const lat2 = toRadians(Number(destination.latitude));
+  const deltaLat = toRadians(Number(destination.latitude) - Number(origin.latitude));
+  const deltaLng = toRadians(Number(destination.longitude) - Number(origin.longitude));
+
+  const a = Math.sin(deltaLat / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusMeters * c;
+}
 
 // Create a new member
 // File: backend/controllers/memberController.js
@@ -257,10 +281,44 @@ exports.createOrUpdateAttendance = async (req, res) => {
         if (!Array.isArray(records) || records.length === 0) {
             return res.status(400).json({ error: 'Invalid payload. Expected an array of records.' });
         }
-        await upsertAttendance(records);
+
+        const companyLocation = req.company?.id ? await getActiveCompanyLocation(req.company.id) : null;
+        const enrichedRecords = records.map((record) => {
+            const latitude = normalizeCoordinate(record.latitude, -90, 90);
+            const longitude = normalizeCoordinate(record.longitude, -180, 180);
+            const hasLocation = latitude !== null && longitude !== null;
+
+            if ((record.latitude != null || record.longitude != null) && !hasLocation) {
+                const error = new Error('Invalid attendance location coordinates.');
+                error.statusCode = 400;
+                throw error;
+            }
+
+            if (!hasLocation) {
+                return record;
+            }
+
+            const distanceFromOffice = companyLocation
+                ? calculateDistanceMeters(
+                    { latitude, longitude },
+                    { latitude: companyLocation.latitude, longitude: companyLocation.longitude },
+                )
+                : null;
+            const radiusMeters = Number(companyLocation?.radius_meters || 1000);
+
+            return {
+                ...record,
+                latitude,
+                longitude,
+                distance_from_office_meters: distanceFromOffice === null ? null : Number(distanceFromOffice.toFixed(2)),
+                location_status: distanceFromOffice !== null && distanceFromOffice > radiusMeters ? 'outside_radius' : 'inside_radius',
+            };
+        });
+
+        await upsertAttendance(enrichedRecords);
         res.status(200).json({ message: 'Attendance saved successfully.' });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(err.statusCode || 500).json({ error: err.message });
     }
 };
 

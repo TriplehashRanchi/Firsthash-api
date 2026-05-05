@@ -50,6 +50,13 @@ const ALLOWED_MIME_TYPES = new Set([
     'image/jpeg',
     'image/png',
     'image/webp',
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/mp4',
+    'audio/ogg',
+    'audio/wav',
+    'audio/webm',
+    'video/webm',
 ]);
 
 // Initialize Multer with our storage configuration

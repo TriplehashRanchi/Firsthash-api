@@ -234,6 +234,43 @@ exports.getMyAttendance = async (req, res) => {
   }
 };
 
+exports.getMyLocationCheck = async (req, res) => {
+  try {
+    const latitude = normalizeCoordinate(req.query?.lat, -90, 90);
+    const longitude = normalizeCoordinate(req.query?.lng, -180, 180);
+
+    if (latitude === null || longitude === null) {
+      return res.status(400).json({ error: 'lat and lng query parameters are required.' });
+    }
+
+    if (!req.company?.id) {
+      return res.status(401).json({ error: 'Company details not found.' });
+    }
+
+    const companyLocation = await getActiveCompanyLocation(req.company.id);
+    if (!companyLocation) {
+      return res.status(404).json({ error: 'Active company location is not configured.' });
+    }
+
+    const distanceFromOffice = calculateDistanceMeters(
+      { latitude, longitude },
+      { latitude: companyLocation.latitude, longitude: companyLocation.longitude }
+    );
+    const radiusMeters = Number(companyLocation.radius_meters || 1000);
+    const locationStatus = distanceFromOffice > radiusMeters ? 'outside_radius' : 'inside_radius';
+
+    return res.json({
+      distance_meters: Number(distanceFromOffice.toFixed(2)),
+      location_status: locationStatus,
+      office_name: companyLocation.location_name || 'Office',
+      radius_meters: radiusMeters
+    });
+  } catch (err) {
+    console.error('getMyLocationCheck error:', err.stack || err);
+    return res.status(500).json({ error: 'Failed to check location.' });
+  }
+};
+
 exports.markMyAttendanceManually = async (req, res) => {
   try {
     const employeeUid = req.user?.firebase_uid || req.firebase_uid;
@@ -332,19 +369,10 @@ exports.markMyAttendanceManually = async (req, res) => {
 };
 exports.getMyOwnAttendance = async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(403).json({ error: 'Authorization token is missing or invalid.' });
-    }
-
-    const idToken = authHeader.split('Bearer ')[1];
-    console.log("idToken:", idToken);
-
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
-    const employeeUid = decodedToken.uid;
+    const employeeUid = req.firebase_uid;
 
     if (!employeeUid) {
-      return res.status(401).json({ error: "Could not identify user from token." });
+      return res.status(401).json({ error: "Authentication details not found." });
     }
     
     const records = await fetchAttendanceForUid(employeeUid);
