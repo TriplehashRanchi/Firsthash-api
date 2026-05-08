@@ -8,14 +8,11 @@ const { logTransaction, updateTransactionStatus  } = require('../models/transact
 const { getPlanByName } = require('../models/planModel');
 const { validateCouponCode } = require('../models/couponModel');
 
-const planPricing = {
-  monthly: 49900, // in paise (₹499)
-  yearly: 499900, // in paise (₹4999)
-};
+const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i;
 
 const createOrder = async (req, res) => {
   try {
-    const { firebase_uid, plan, coupon } = req.body;
+    const { firebase_uid, plan, coupon, gst_number } = req.body;
 
     if (!firebase_uid || !plan) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -46,7 +43,7 @@ const createOrder = async (req, res) => {
 
     // If final amount is 0, activate subscription directly
     if (finalAmount <= 0) {
-      const durationDays = plan === 'monthly' ? 30 : 365;
+      const durationDays = planData.duration_days;
       const expiryDate = new Date();
       expiryDate.setDate(expiryDate.getDate() + durationDays);
 
@@ -84,6 +81,10 @@ const createOrder = async (req, res) => {
       return res.status(200).json({ free_checkout: true, message: 'Subscription activated successfully' });
     }
 
+    if (!GSTIN_PATTERN.test((gst_number || '').trim())) {
+      return res.status(400).json({ error: 'Valid GSTIN is required for this plan' });
+    }
+
     // ✅ Create Razorpay Order if amount > 0
     const order = await razorpay.orders.create({
       amount: finalAmount,
@@ -112,14 +113,16 @@ const createOrder = async (req, res) => {
 };
 
 const verifyPayment = async (req, res) => {
+  let razorpay_order_id;
   try {
     const {
-      razorpay_order_id,
+      razorpay_order_id: orderId,
       razorpay_payment_id,
       razorpay_signature,
       firebase_uid,
       plan,
     } = req.body;
+    razorpay_order_id = orderId;
 
     const body = razorpay_order_id + '|' + razorpay_payment_id;
     const expectedSignature = crypto
@@ -131,7 +134,12 @@ const verifyPayment = async (req, res) => {
       return res.status(400).json({ error: 'Invalid payment signature' });
     }
 
-    const durationDays = plan === 'monthly' ? 30 : 365;
+    const planData = await getPlanByName(plan);
+    if (!planData || !planData.is_active) {
+      return res.status(400).json({ error: 'Invalid or inactive plan' });
+    }
+
+    const durationDays = planData.duration_days;
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + durationDays);
 
@@ -159,7 +167,9 @@ const verifyPayment = async (req, res) => {
 
     res.status(200).json({ message: 'Payment verified and subscription activated.' });
   } catch (error) {
-     await updateTransactionStatus(razorpay_order_id, 'failed');
+    if (razorpay_order_id) {
+      await updateTransactionStatus(razorpay_order_id, 'failed');
+    }
     console.error('Payment verification failed:', error);
     res.status(500).json({ error: 'Payment verification failed' });
    
